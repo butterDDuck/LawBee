@@ -10,6 +10,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # 애플리케이션 코드 복사
 COPY app ./app
 COPY data ./data
+COPY ui ./ui
 
 EXPOSE 8000
 

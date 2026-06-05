@@ -1,7 +1,7 @@
 """룰 엔진 금칙어·패턴 사전
 
 규제 조항의 심의 포인트에서 추출한 정형 위반 표현 정의
-팀원이 사내 금칙어 기준에 맞춰 RULES 를 확장하는 지점
+사내 금칙어 기준에 맞춰 RULES 를 확장하는 지점 (#14, @qefoi)
 """
 import re
 from dataclasses import dataclass

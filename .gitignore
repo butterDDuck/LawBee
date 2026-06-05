@@ -14,6 +14,9 @@ vectorstore/
 # SQLite DB (로컬 심의 이력)
 *.db
 
+# Docker 런타임 데이터
+var/
+
 # IDE
 .idea/
 .vscode/

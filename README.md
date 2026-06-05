@@ -16,12 +16,14 @@ LawBee/
 ├── data/regulations.jsonl   # 규제 조항 54청크 (RAG 지식베이스)
 ├── app/
 │   ├── config.py            # .env 설정 로딩
-│   ├── ingest.py            # jsonl → 임베딩 → FAISS 적재
-│   ├── retriever.py         # 벡터스토어 로드 + 조항 검색(매체 필터)
-│   ├── rules.py             # 결정론적 룰 엔진
-│   ├── schema.py            # 심의 입출력 + LLM 구조화 출력 스키마
-│   ├── graph.py             # LangGraph 심의 파이프라인
-│   └── main.py              # FastAPI 엔드포인트
+│   ├── domain/              # 스키마·타입 (의존성 0)
+│   │   └── schema.py
+│   ├── rag/                 # ingest(적재) · retriever(검색)
+│   ├── rules/               # engine(엔진) · lexicon(금칙어 사전)
+│   ├── services/            # graph (LangGraph 심의 파이프라인)
+│   ├── store/               # sqlite (심의 건 저장소)
+│   ├── preprocess/          # image · video 멀티모달 전처리 (인터페이스)
+│   └── api/                 # main (FastAPI 엔드포인트)
 ├── ui/                      # (예정) Streamlit 검수 화면
 └── scripts/
     ├── test_search.py       # RAG 검색 동작 확인
@@ -41,7 +43,7 @@ cp .env.example .env
 #   .env 를 열어 OPENAI_API_KEY 입력
 
 # 3. 벡터스토어 생성 (규제 데이터 임베딩)
-python -m app.ingest
+python -m app.rag.ingest
 
 # 4. 검색 동작 확인
 python -m scripts.test_search "원금 100% 보장 확정 수익 펀드"
@@ -50,7 +52,7 @@ python -m scripts.test_search "원금 100% 보장 확정 수익 펀드"
 python -m scripts.test_review "원금 100% 보장! 업계 1위 확정 수익 펀드, 누구나 가입 가능"
 
 # 6. API 서버 구동
-uvicorn app.main:app --reload
+uvicorn app.api.main:app --reload
 #   POST /review  { "content": "...", "media": "텍스트" }
 #   문서: http://127.0.0.1:8000/docs
 ```

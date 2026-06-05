@@ -1,6 +1,6 @@
 """심의 파이프라인 동작 확인용 스크립트
 
-사전 조건: .env 에 OPENAI_API_KEY 설정 + `python -m app.ingest` 로 벡터스토어 생성
+사전 조건: .env 에 OPENAI_API_KEY 설정 + `python -m app.rag.ingest` 로 벡터스토어 생성
 
 실행:
     python -m scripts.test_review "원금 100% 보장! 누구나 확정 수익 받는 펀드"
@@ -8,7 +8,7 @@
 """
 import sys
 
-from app.graph import run_review
+from app.services.graph import run_review
 
 
 def main() -> None:

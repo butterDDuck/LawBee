@@ -3,7 +3,7 @@
 data/regulations.jsonl  →  OpenAI 임베딩  →  FAISS 벡터스토어 저장
 
 실행:
-    python -m app.ingest
+    python -m app.rag.ingest
 """
 import json
 from pathlib import Path

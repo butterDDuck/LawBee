@@ -1,19 +1,19 @@
 """FastAPI 심의 API
 
 실행:
-    uvicorn app.main:app --reload
+    uvicorn app.api.main:app --reload
 """
 from fastapi import FastAPI, HTTPException
 
 from app import store
-from app.schema import (
+from app.domain.schema import (
     DecisionRequest,
     DecisionStatus,
     ReviewRecord,
     ReviewRequest,
     ReviewResult,
 )
-from app.graph import run_review
+from app.services.graph import run_review
 
 app = FastAPI(
     title="LawBee API",

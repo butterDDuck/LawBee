@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Env / secrets
+.env
+
+# Vector store (생성물 — 재생성 가능)
+vectorstore/
+
+# IDE
+.idea/
+.vscode/
+
+# 로컬 전용 (저장소 비노출)
+CLAUDE.md
+
+# OS
+.DS_Store

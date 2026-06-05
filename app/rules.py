@@ -1,0 +1,75 @@
+"""결정론적 룰 엔진
+
+규제 조항의 심의 포인트에서 추출한 정형 위반 표현을 정규식으로 1차 탐지
+RAG 검색만으로는 변별이 약한 단정·최상급·보편적용 표현을 확실히 잡는 역할
+"""
+import re
+from dataclasses import dataclass
+
+from app.schema import RuleHit
+
+
+@dataclass
+class Rule:
+    pattern: re.Pattern
+    category: str
+    severity: str  # high | medium
+    message: str
+
+
+def _p(expr: str) -> re.Pattern:
+    return re.compile(expr)
+
+
+# 규제 기반 금칙어·패턴 초안 (추후 사내 금칙어 사전으로 확장)
+RULES: list[Rule] = [
+    # 원금·수익 보장 단정 표현 — 금소법 제21조 부당권유(단정적 판단 제공)
+    Rule(_p(r"원금\s*보장|원금보장|손실\s*(이|은|도)?\s*없|절대\s*안전"),
+         "원금·손실 단정", "high", "원금 보장·무손실 단정 표현은 부당권유에 해당할 수 있음"),
+    Rule(_p(r"확정\s*수익|확정수익|보장(된|되는)\s*수익|무조건\s*수익|약속(된|한|드린)\s*수익|확실(한|히)\s*수익"),
+         "수익 보장 단정", "high", "확정·보장 수익 표현은 단정적 판단 제공 금지에 저촉될 수 있음"),
+    Rule(_p(r"100\s*%\s*(보장|수익|환급)"),
+         "수치 단정", "high", "100% 보장·수익 표현은 오인 유발 소지가 큼"),
+
+    # 보편적용 오인 — 대출 거래조건을 누구에게나 적용되는 것처럼 표현
+    Rule(_p(r"누구나|누구든지|묻지(\s|\.)?마|무심사|무조건\s*대출|100\s*%\s*대출"),
+         "보편적용 오인", "high", "거래조건을 누구에게나 적용되는 것처럼 오인시키는 표현"),
+
+    # 근거 없는 최상급 표현 — 표시광고법 제3조, 협회 세부지침
+    Rule(_p(r"업계\s*1\s*위|1\s*위|1\s*등|최고\s*금리|최저\s*금리|최상|최강|유일|역대급|끝판왕|종결자|제일"),
+         "근거 없는 최상급", "medium", "객관적 근거 없는 최상급 표현은 부당광고 소지가 있음"),
+
+    # 부당 비교 — 비교 대상·기준 불명확
+    Rule(_p(r"타사\s*(대비|보다)|타사대비|경쟁사\s*보다|다른\s*곳보다"),
+         "부당 비교", "medium", "비교 대상·기준이 불명확한 비교 표현은 부당비교에 해당할 수 있음"),
+
+    # 다크패턴 — 해지·탈퇴 방해
+    Rule(_p(r"해지(는|\s)*(전화|고객센터|영업점|방문)|탈퇴\s*불가|해지\s*불가"),
+         "해지·탈퇴 방해", "medium", "가입 대비 해지를 어렵게 하는 표현은 다크패턴(방해형)에 해당할 수 있음"),
+
+    # 과장·기습 표현
+    Rule(_p(r"마감\s*임박|지금\s*뿐|오늘\s*만|단\s*\d+\s*명|선착순"),
+         "조급함 유발", "medium", "한정·긴박 표현은 압박형 다크패턴 소지가 있음"),
+]
+
+
+def apply_rules(content: str) -> list[RuleHit]:
+    """콘텐츠에서 룰에 매칭되는 표현을 모두 탐지하여 반환"""
+    hits: list[RuleHit] = []
+    seen: set[tuple[str, str]] = set()
+    for rule in RULES:
+        for m in rule.pattern.finditer(content):
+            term = m.group(0).strip()
+            key = (term, rule.category)
+            if key in seen:
+                continue
+            seen.add(key)
+            hits.append(
+                RuleHit(
+                    term=term,
+                    category=rule.category,
+                    severity=rule.severity,
+                    message=rule.message,
+                )
+            )
+    return hits

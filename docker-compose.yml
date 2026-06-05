@@ -1,0 +1,17 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      # 런타임 데이터(DB)는 마운트된 디렉토리에 보관
+      - DB_PATH=var/lawbee.db
+    volumes:
+      # 벡터스토어·런타임 데이터는 호스트에 영속화 (재시작 시 유지)
+      - ./vectorstore:/app/vectorstore
+      - ./var:/app/var
+    restart: unless-stopped
+
+  # UI(Streamlit) 서비스는 해당 기능 구현 시 추가

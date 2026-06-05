@@ -57,6 +57,22 @@ uvicorn app.api.main:app --reload
 #   문서: http://127.0.0.1:8000/docs
 ```
 
+## Docker 로 실행
+
+로컬 환경 세팅 없이 동일한 환경에서 실행합니다.
+
+```bash
+cp .env.example .env          # OPENAI_API_KEY 입력
+
+# 최초 1회 벡터스토어 적재 (임베딩에 키 필요)
+docker compose run --rm api python -m app.rag.ingest
+
+# API 서버 구동 (http://127.0.0.1:8000/docs)
+docker compose up
+```
+
+> 벡터스토어와 심의 DB 는 호스트의 `vectorstore/`·`var/` 에 영속화됩니다.
+
 ## 개발 로드맵
 - [x] 0. 프로젝트 스캐폴딩 + 규제 데이터 확보
 - [x] 1. RAG 적재 파이프라인 (jsonl → FAISS)

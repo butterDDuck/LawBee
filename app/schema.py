@@ -3,8 +3,11 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-# 심의 최종 판정 상태
+# AI 심의 판정 상태
 Status = Literal["위반", "주의", "통과"]
+
+# 준법관리자 결재 상태
+DecisionStatus = Literal["대기", "승인", "조건부승인", "반려"]
 
 
 class ReviewRequest(BaseModel):
@@ -57,3 +60,25 @@ class ReviewResult(BaseModel):
     violations: list[Violation] = Field(default_factory=list)
     citations: list[Citation] = Field(default_factory=list)
     alternative_text: str | None = Field(None, description="위반 시 제안하는 대안 문구")
+
+
+class DecisionRequest(BaseModel):
+    """준법관리자 결재 요청"""
+
+    decision: DecisionStatus = Field(..., description="결재 결과: 승인 | 조건부승인 | 반려")
+    comment: str = Field("", description="준법관리자 코멘트")
+    reviewer: str = Field("준법관리자", description="결재자")
+
+
+class ReviewRecord(BaseModel):
+    """저장된 심의 건 (AI 심의 결과 + 준법관리자 결재 상태)"""
+
+    id: int
+    content: str
+    media: str | None = None
+    decision_status: DecisionStatus = "대기"
+    ai_result: ReviewResult
+    comment: str = ""
+    reviewer: str | None = None
+    created_at: str
+    decided_at: str | None = None

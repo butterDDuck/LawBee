@@ -11,6 +11,7 @@ class Settings(BaseSettings):
 
     data_path: str = "data/regulations.jsonl"
     vectorstore_dir: str = "vectorstore"
+    db_path: str = "lawbee.db"
 
 
 settings = Settings()

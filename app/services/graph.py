@@ -11,8 +11,8 @@ from langgraph.graph import StateGraph, END
 
 from app.config import settings
 from app.rules import apply_rules
-from app.retriever import search
-from app.schema import (
+from app.rag.retriever import search
+from app.domain.schema import (
     Citation,
     Judgment,
     ReviewResult,

@@ -7,8 +7,8 @@ import sqlite3
 from datetime import datetime
 
 from app.config import settings
-from app.graph import run_review
-from app.schema import DecisionStatus, ReviewRecord, ReviewResult
+from app.services.graph import run_review
+from app.domain.schema import DecisionStatus, ReviewRecord, ReviewResult
 
 
 def _now() -> str:

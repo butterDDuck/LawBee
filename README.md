@@ -67,11 +67,26 @@ cp .env.example .env          # OPENAI_API_KEY 입력
 # 최초 1회 벡터스토어 적재 (임베딩에 키 필요)
 docker compose run --rm api python -m app.rag.ingest
 
-# API 서버 구동 (http://127.0.0.1:8000/docs)
+# API + UI 서버 구동
 docker compose up
+#   API  : http://127.0.0.1:8000/docs
+#   UI   : http://127.0.0.1:8501
 ```
 
 > 벡터스토어와 심의 DB 는 호스트의 `vectorstore/`·`var/` 에 영속화됩니다.
+
+## 준법관리자 콘솔 (Streamlit)
+
+API 서버가 떠 있는 상태에서 검수 콘솔을 실행합니다.
+
+```bash
+uvicorn app.api.main:app --reload          # 1) API 서버
+streamlit run ui/streamlit_app.py          # 2) UI (http://127.0.0.1:8501)
+```
+
+- 검수 목록 대시보드에서 심의 건과 결재 상태를 확인
+- 새로 검수하기로 콘텐츠를 제출하면 AI 1차 심의 실행
+- 검수 상세에서 심의 결과를 검토하고 승인·조건부승인·반려를 기록
 
 ## 개발 로드맵
 - [x] 0. 프로젝트 스캐폴딩 + 규제 데이터 확보
@@ -79,5 +94,5 @@ docker compose up
 - [x] 2. 검색 검증 (실 API 키로 동작 확인)
 - [x] 3. LangGraph 심의 파이프라인 (룰엔진 → RAG → LLM판단 → 대안문구)
 - [x] 4. FastAPI 엔드포인트
-- [ ] 5. Streamlit 검수 UI
+- [x] 5. Streamlit 검수 UI
 - [ ] 6. AWS 배포

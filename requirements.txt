@@ -5,6 +5,8 @@ langchain-community>=0.3.0
 langgraph>=0.2.0
 faiss-cpu>=1.8.0
 openai>=1.40.0
+rank_bm25>=0.2.2
+cohere>=5.0.0
 
 # --- API ---
 fastapi>=0.115.0

@@ -20,7 +20,7 @@ from app.domain.schema import (
     ReviewResult,
     TimelineSegment,
 )
-from app.preprocess.image import extract_content
+from app.preprocess.image import analyze_frame, extract_content
 from app.preprocess.video import extract_frames, transcribe
 from app.services.graph import run_review
 
@@ -122,33 +122,46 @@ async def create_review_video(file: UploadFile = File(...), title: str = Form(""
         segments = []
     transcript = "\n".join(s.text for s in segments).strip()
 
-    # 화면 프레임 → 프레임별 Vision 분석 (병렬)
+    # 화면 프레임 → 프레임별 Vision 시각 위반 분석 (병렬)
     frames = extract_frames(data, filename=fname)
-    frame_texts: list[tuple[float, str]] = []
+    frame_data: list[tuple[float, str, list]] = []  # (시각, 화면 문구, 시각 위반 목록)
     if frames:
         with ThreadPoolExecutor(max_workers=4) as ex:
-            futs = {ex.submit(extract_content, jpg): t for t, jpg in frames}
+            futs = {ex.submit(analyze_frame, jpg): t for t, jpg in frames}
             for fut in as_completed(futs):
                 try:
-                    frame_texts.append((futs[fut], fut.result()))
+                    fa = fut.result()
+                    frame_data.append((futs[fut], fa["text"], fa["findings"]))
                 except Exception:
                     pass
-        frame_texts.sort()
+        frame_data.sort()
 
-    if not transcript and not frame_texts:
-        raise HTTPException(status_code=422, detail="영상에서 자막·화면 텍스트를 추출하지 못했습니다")
+    if not transcript and not frame_data:
+        raise HTTPException(status_code=422, detail="영상에서 자막·화면 내용을 추출하지 못했습니다")
 
     parts = []
     if transcript:
         parts.append("[음성 자막]\n" + transcript)
-    if frame_texts:
-        parts.append("[화면 텍스트]\n" + "\n".join(t for _, t in frame_texts))
+    if frame_data:
+        lines = []
+        for t, txt, finds in frame_data:
+            line = f"{int(t)}초: {txt}".strip()
+            for f in finds:
+                line += f" (시각 위반: {f.get('category')} - {f.get('detail', '')})"
+            lines.append(line)
+        parts.append("[화면 분석]\n" + "\n".join(lines))
     combined = "\n\n".join(parts)
 
     result = run_review(combined, media="영상")
     terms = [h.term for h in result.rule_hits]
     audio_tl = [_seg(s.start, s.end, s.text, terms, "음성") for s in segments]
-    visual_tl = [_seg(t, t + 4.0, txt, terms, "화면") for t, txt in frame_texts]
+    visual_tl = []
+    for t, txt, finds in frame_data:
+        cats = [f.get("category") for f in finds if f.get("category")]
+        one = " ".join(txt.split())
+        disp = (one[:64] + "…") if len(one) > 64 else (one or "(화면)")
+        visual_tl.append(TimelineSegment(start=t, end=t + 4.0, text=disp,
+                                         flagged=bool(finds), terms=cats, kind="화면"))
     result.timeline = sorted(audio_tl + visual_tl, key=lambda x: x.start)
 
     rec = store.create_with_result(combined, "영상", result, title=title or None)

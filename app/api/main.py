@@ -3,9 +3,14 @@
 실행:
     uvicorn app.api.main:app --reload
 """
+from pathlib import Path
+
 from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 
 from app import store
+from app.config import settings
 from app.domain.schema import (
     DecisionRequest,
     DecisionStatus,
@@ -23,6 +28,21 @@ app = FastAPI(
     description="사내 마케팅/영업 콘텐츠 준법심의 자동화 API",
     version="0.1.0",
 )
+# 브라우저에서 원본 미디어를 표시할 수 있도록 CORS 허용 (로컬 데모)
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+_UPLOADS = Path(settings.uploads_dir)
+
+
+def _save_media(review_id: int, data: bytes, filename: str | None) -> None:
+    _UPLOADS.mkdir(parents=True, exist_ok=True)
+    ext = Path(filename or "").suffix or ".bin"
+    (_UPLOADS / f"{review_id}{ext}").write_bytes(data)
+
+
+def _media_path(review_id: int) -> Path | None:
+    matches = sorted(_UPLOADS.glob(f"{review_id}.*"))
+    return matches[0] if matches else None
 
 
 @app.get("/health")
@@ -83,7 +103,9 @@ async def create_review_image(file: UploadFile = File(...)) -> ReviewRecord:
     if not data:
         raise HTTPException(status_code=400, detail="이미지 파일이 비어 있습니다")
     text = extract_content(data)
-    return store.create_review(text, media="이미지")
+    rec = store.create_review(text, media="이미지")
+    _save_media(rec.id, data, file.filename)
+    return rec
 
 
 @app.post("/reviews/video", response_model=ReviewRecord)
@@ -98,7 +120,18 @@ async def create_review_video(file: UploadFile = File(...)) -> ReviewRecord:
         raise HTTPException(status_code=422, detail="영상에서 자막을 추출하지 못했습니다")
     result = run_review(transcript, media="영상")
     result.timeline = _build_timeline(segments, result.rule_hits)
-    return store.create_with_result(transcript, "영상", result)
+    rec = store.create_with_result(transcript, "영상", result)
+    _save_media(rec.id, data, file.filename)
+    return rec
+
+
+@app.get("/reviews/{review_id}/media")
+def get_media(review_id: int):
+    """업로드된 원본 미디어(이미지·영상) 반환"""
+    p = _media_path(review_id)
+    if not p:
+        raise HTTPException(status_code=404, detail="원본 미디어가 없습니다")
+    return FileResponse(p)
 
 
 @app.post("/reviews/{review_id}/decision", response_model=ReviewRecord)

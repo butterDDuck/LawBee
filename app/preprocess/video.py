@@ -1,11 +1,13 @@
-"""영상 전처리 — OpenAI Whisper STT
+"""영상 전처리 — Whisper STT(음성) + 프레임 추출(화면)
 
-심의 대상 영상에서 타임스탬프가 포함된 자막을 추출
-각 구간(Segment)을 심의 엔진에 넣어 타임라인 위반 매핑에 사용
+음성 자막과 화면 프레임을 각각 추출하여 음성·화면 위반을 통합 심사
 """
 import io
+import os
+import tempfile
 from dataclasses import dataclass
 
+import cv2
 from openai import OpenAI
 
 from app.config import settings
@@ -40,3 +42,32 @@ def transcribe(video_bytes: bytes, filename: str = "upload.mp4") -> list[Segment
     )
     segments = getattr(resp, "segments", None) or []
     return [Segment(start=float(s.start), end=float(s.end), text=s.text.strip()) for s in segments]
+
+
+def extract_frames(video_bytes: bytes, every: float = 4.0, max_frames: int = 15,
+                   filename: str = "upload.mp4") -> list[tuple[float, bytes]]:
+    """영상에서 일정 간격으로 프레임을 추출하여 (시각(초), JPG 바이트) 목록 반환"""
+    suffix = os.path.splitext(filename)[1] or ".mp4"
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tf:
+        tf.write(video_bytes)
+        path = tf.name
+    try:
+        cap = cv2.VideoCapture(path)
+        fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
+        total = cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0
+        duration = (total / fps) if fps else 0.0
+        frames: list[tuple[float, bytes]] = []
+        t = 0.0
+        while (duration == 0 or t <= duration) and len(frames) < max_frames:
+            cap.set(cv2.CAP_PROP_POS_MSEC, t * 1000.0)
+            ok, frame = cap.read()
+            if not ok:
+                break
+            ok2, buf = cv2.imencode(".jpg", frame)
+            if ok2:
+                frames.append((round(t, 1), buf.tobytes()))
+            t += every
+        cap.release()
+        return frames
+    finally:
+        os.unlink(path)

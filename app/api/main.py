@@ -3,9 +3,10 @@
 실행:
     uvicorn app.api.main:app --reload
 """
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
@@ -20,7 +21,7 @@ from app.domain.schema import (
     TimelineSegment,
 )
 from app.preprocess.image import extract_content
-from app.preprocess.video import transcribe
+from app.preprocess.video import extract_frames, transcribe
 from app.services.graph import run_review
 
 app = FastAPI(
@@ -66,7 +67,7 @@ def create_review(req: ReviewRequest) -> ReviewRecord:
     """콘텐츠 제출 → AI 1차 심의 자동 실행 → 대기 상태로 저장"""
     if not req.content.strip():
         raise HTTPException(status_code=400, detail="content 가 비어 있습니다")
-    return store.create_review(req.content, media=req.media)
+    return store.create_review(req.content, media=req.media, title=req.title)
 
 
 @app.get("/reviews", response_model=list[ReviewRecord])
@@ -86,41 +87,71 @@ def get_review(review_id: int) -> ReviewRecord:
 
 # --- 멀티모달 (이미지·영상) ---
 
-def _build_timeline(segments, rule_hits) -> list[TimelineSegment]:
-    """자막 구간에 위반 문구(룰 탐지어)를 매핑하여 타임라인 생성"""
-    terms = [h.term for h in rule_hits]
-    out = []
-    for s in segments:
-        hit = [t for t in terms if t in s.text]
-        out.append(TimelineSegment(start=s.start, end=s.end, text=s.text, flagged=bool(hit), terms=hit))
-    return out
+def _seg(start, end, text, terms, kind):
+    """텍스트에 위반 문구(룰 탐지어)를 매핑한 타임라인 구간 생성"""
+    one = " ".join(text.split())
+    hit = [t for t in terms if t in text]
+    disp = (one[:70] + "…") if len(one) > 70 else one
+    return TimelineSegment(start=start, end=end, text=disp, flagged=bool(hit), terms=hit, kind=kind)
 
 
 @app.post("/reviews/image", response_model=ReviewRecord)
-async def create_review_image(file: UploadFile = File(...)) -> ReviewRecord:
+async def create_review_image(file: UploadFile = File(...), title: str = Form("")) -> ReviewRecord:
     """이미지 업로드 → Vision 텍스트 추출 → AI 심의 → 대기 저장"""
     data = await file.read()
     if not data:
         raise HTTPException(status_code=400, detail="이미지 파일이 비어 있습니다")
     text = extract_content(data)
-    rec = store.create_review(text, media="이미지")
+    rec = store.create_review(text, media="이미지", title=title or None)
     _save_media(rec.id, data, file.filename)
     return rec
 
 
 @app.post("/reviews/video", response_model=ReviewRecord)
-async def create_review_video(file: UploadFile = File(...)) -> ReviewRecord:
-    """영상 업로드 → Whisper 자막 추출 → AI 심의 → 타임라인 매핑 → 대기 저장"""
+async def create_review_video(file: UploadFile = File(...), title: str = Form("")) -> ReviewRecord:
+    """영상 업로드 → 음성 자막(Whisper) + 화면 프레임(Vision) 추출 → 통합 심의 → 타임라인 저장"""
     data = await file.read()
     if not data:
         raise HTTPException(status_code=400, detail="영상 파일이 비어 있습니다")
-    segments = transcribe(data, filename=file.filename or "upload.mp4")
+    fname = file.filename or "upload.mp4"
+
+    # 음성 자막 (없는 영상도 허용)
+    try:
+        segments = transcribe(data, filename=fname)
+    except Exception:
+        segments = []
     transcript = "\n".join(s.text for s in segments).strip()
-    if not transcript:
-        raise HTTPException(status_code=422, detail="영상에서 자막을 추출하지 못했습니다")
-    result = run_review(transcript, media="영상")
-    result.timeline = _build_timeline(segments, result.rule_hits)
-    rec = store.create_with_result(transcript, "영상", result)
+
+    # 화면 프레임 → 프레임별 Vision 분석 (병렬)
+    frames = extract_frames(data, filename=fname)
+    frame_texts: list[tuple[float, str]] = []
+    if frames:
+        with ThreadPoolExecutor(max_workers=4) as ex:
+            futs = {ex.submit(extract_content, jpg): t for t, jpg in frames}
+            for fut in as_completed(futs):
+                try:
+                    frame_texts.append((futs[fut], fut.result()))
+                except Exception:
+                    pass
+        frame_texts.sort()
+
+    if not transcript and not frame_texts:
+        raise HTTPException(status_code=422, detail="영상에서 자막·화면 텍스트를 추출하지 못했습니다")
+
+    parts = []
+    if transcript:
+        parts.append("[음성 자막]\n" + transcript)
+    if frame_texts:
+        parts.append("[화면 텍스트]\n" + "\n".join(t for _, t in frame_texts))
+    combined = "\n\n".join(parts)
+
+    result = run_review(combined, media="영상")
+    terms = [h.term for h in result.rule_hits]
+    audio_tl = [_seg(s.start, s.end, s.text, terms, "음성") for s in segments]
+    visual_tl = [_seg(t, t + 4.0, txt, terms, "화면") for t, txt in frame_texts]
+    result.timeline = sorted(audio_tl + visual_tl, key=lambda x: x.start)
+
+    rec = store.create_with_result(combined, "영상", result, title=title or None)
     _save_media(rec.id, data, file.filename)
     return rec
 
@@ -132,6 +163,17 @@ def get_media(review_id: int):
     if not p:
         raise HTTPException(status_code=404, detail="원본 미디어가 없습니다")
     return FileResponse(p)
+
+
+@app.delete("/reviews/{review_id}")
+def delete_review(review_id: int) -> dict:
+    """심의 건 및 원본 미디어 삭제"""
+    if not store.delete_review(review_id):
+        raise HTTPException(status_code=404, detail="심의 건을 찾을 수 없습니다")
+    p = _media_path(review_id)
+    if p:
+        p.unlink(missing_ok=True)
+    return {"deleted": review_id}
 
 
 @app.post("/reviews/{review_id}/decision", response_model=ReviewRecord)

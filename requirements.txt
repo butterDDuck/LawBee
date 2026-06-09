@@ -1,3 +1,6 @@
+# --- 멀티모달 (영상 프레임 추출) ---
+opencv-python-headless>=4.10.0
+
 # --- Core LLM / RAG ---
 langchain>=0.3.0
 langchain-openai>=0.2.0

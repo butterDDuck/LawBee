@@ -15,6 +15,7 @@ class ReviewRequest(BaseModel):
 
     content: str = Field(..., description="심의 대상 마케팅 콘텐츠 원문")
     media: str | None = Field(None, description="콘텐츠 매체: 텍스트 | 영상 | UI")
+    title: str | None = Field(None, description="콘텐츠 제목")
 
 
 class RuleHit(BaseModel):
@@ -56,9 +57,10 @@ class TimelineSegment(BaseModel):
 
     start: float = Field(..., description="시작 시각(초)")
     end: float = Field(..., description="종료 시각(초)")
-    text: str = Field(..., description="구간 자막")
+    text: str = Field(..., description="구간 자막 또는 화면 텍스트")
     flagged: bool = Field(False, description="위반 문구 포함 여부")
     terms: list[str] = Field(default_factory=list, description="구간에서 탐지된 위반 문구")
+    kind: str = Field("음성", description="음성 | 화면")
 
 
 class ReviewResult(BaseModel):
@@ -86,6 +88,7 @@ class ReviewRecord(BaseModel):
 
     id: int
     content: str
+    title: str | None = None
     media: str | None = None
     decision_status: DecisionStatus = "대기"
     ai_result: ReviewResult

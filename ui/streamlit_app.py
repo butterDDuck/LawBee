@@ -7,10 +7,12 @@ API_BASE_URL 환경변수로 API 주소를 지정 (기본 http://127.0.0.1:8000)
 디자인 레퍼런스(React 콘솔)를 Streamlit 으로 재현
 """
 import html
+import json
 import os
 
 import requests
 import streamlit as st
+import streamlit.components.v1 as components
 
 API = os.environ.get("API_BASE_URL", "http://127.0.0.1:8000")
 
@@ -464,6 +466,54 @@ def new_review():
 
 # --- 화면: 검수·결재 상세 ---
 
+_VIDEO_TPL = """
+<div style="display:grid;grid-template-columns:1fr 340px;gap:14px;font-family:-apple-system,'Apple SD Gothic Neo',sans-serif;">
+  <video id="vid" src="__URL__" controls style="width:100%;border-radius:12px;background:#000;max-height:420px;"></video>
+  <div style="display:flex;flex-direction:column;border:1px solid #e6eaf1;border-radius:12px;background:#fff;overflow:hidden;height:420px;">
+    <div style="padding:10px 12px;border-bottom:1px solid #eef1f6;font-size:12px;font-weight:700;color:#0f1b2d;">
+      <span style="display:inline-block;width:7px;height:7px;border-radius:9px;background:#34d399;margin-right:6px;"></span>실시간 위반 감지
+    </div>
+    <div id="segs" style="flex:1;overflow:auto;padding:8px 10px;"></div>
+  </div>
+</div>
+<script>
+const SEGS = __SEGS__;
+const vid = document.getElementById('vid');
+const wrap = document.getElementById('segs');
+function mmss(t){var m=Math.floor(t/60),s=Math.floor(t%60);return (''+m).padStart(2,'0')+':'+(''+s).padStart(2,'0');}
+SEGS.forEach(function(s,i){
+  var d=document.createElement('div'); d.id='seg'+i;
+  d.style.cssText='padding:7px 9px;border-radius:7px;margin-bottom:5px;font-size:12.5px;line-height:1.5;transition:all .2s;border:1px solid transparent;color:#52617a;';
+  var terms = s.flagged ? s.terms.map(function(t){return '<span style="background:#fdecea;color:#c0322b;border:1px solid #f6cfc9;border-radius:999px;padding:1px 7px;font-size:11px;font-weight:700;margin-left:4px;">'+t+'</span>';}).join('') : '';
+  d.innerHTML='<span style="font-family:monospace;color:#94a3b8;">'+mmss(s.start)+'</span> '+s.text+terms;
+  wrap.appendChild(d);
+});
+vid.addEventListener('timeupdate', function(){
+  var t=vid.currentTime;
+  SEGS.forEach(function(s,i){
+    var el=document.getElementById('seg'+i);
+    var active = t>=s.start && t<s.end;
+    if(active){
+      el.style.background = s.flagged ? '#fdecea' : '#eef4ff';
+      el.style.borderColor = s.flagged ? '#f6cfc9' : '#c9d8fb';
+      el.style.color = s.flagged ? '#7a2a25' : '#1d4ed8';
+      el.scrollIntoView({behavior:'smooth',block:'nearest'});
+    } else { el.style.background='transparent'; el.style.borderColor='transparent'; el.style.color='#52617a'; }
+  });
+});
+</script>
+"""
+
+
+def _video_review(rid, timeline):
+    """영상 재생 + 재생 시각 동기화 실시간 위반 피드 (클라이언트 사이드)"""
+    segs = json.dumps(
+        [{"start": s["start"], "end": s["end"], "text": s["text"], "flagged": s["flagged"], "terms": s["terms"]}
+         for s in timeline], ensure_ascii=False)
+    out = _VIDEO_TPL.replace("__URL__", f"{API}/reviews/{rid}/media").replace("__SEGS__", segs)
+    components.html(out, height=440)
+
+
 def detail(rid):
     rec = api_get(rid)
     ai = rec["ai_result"]
@@ -473,36 +523,33 @@ def detail(rid):
 
     topbar(f"준법심의 · RV-{rec['id']:04d}", title_of(rec), badge(vlabel, vtone, dot=True))
 
+    media = rec["media"]
+    if media == "영상" and ai.get("timeline"):
+        st.markdown('<div style="font-size:14.5px;font-weight:800;color:#0f1b2d;margin-bottom:10px;">영상 미리보기 · 실시간 위반 감지</div>', unsafe_allow_html=True)
+        _video_review(rec["id"], ai["timeline"])
+        st.write("")
+
     left, right = st.columns([1.05, 0.95])
 
-    # 좌 — 콘텐츠 미리보기
+    # 좌 — 원본 미리보기
     with left:
+        head = "추출 자막" if media == "영상" else "콘텐츠 미리보기"
         st.markdown(
             f'<div style="display:flex;align-items:center;gap:9px;margin-bottom:12px;">'
-            f'<span style="font-size:14.5px;font-weight:800;color:#0f1b2d;">콘텐츠 미리보기</span>'
+            f'<span style="font-size:14.5px;font-weight:800;color:#0f1b2d;">{head}</span>'
             f'<span style="margin-left:auto;">{badge(f"위반 {high}", "red")} &nbsp;{badge(f"주의 {mid}", "amber")}</span></div>',
             unsafe_allow_html=True)
-        st.markdown(
-            '<div class="lb-anim" style="background:#fff;border:1px solid #e6eaf1;border-radius:14px;padding:22px 24px;box-shadow:0 1px 2px rgba(16,24,40,.04);">'
-            '<div style="font-size:11px;font-weight:700;color:#94a3b8;letter-spacing:.05em;margin-bottom:10px;">본문 카피 · 위반 문구 하이라이트</div>'
-            f'<p style="margin:0;font-size:16px;line-height:1.95;color:#27364e;word-break:keep-all;">{highlight(rec["content"], ai["rule_hits"])}</p>'
-            '</div>', unsafe_allow_html=True)
-        if ai.get("timeline"):
-            st.markdown('<div style="font-size:13px;font-weight:800;color:#0f1b2d;margin:18px 0 8px;">영상 타임라인 · 구간별 위반</div>', unsafe_allow_html=True)
-            tl = ""
-            for s in ai["timeline"]:
-                ts = f'{int(s["start"] // 60):02d}:{int(s["start"] % 60):02d}'
-                if s["flagged"]:
-                    terms = " ".join(badge(t, "red", sm=True) for t in s["terms"])
-                    tl += (f'<div style="display:flex;gap:10px;padding:8px 11px;border-radius:8px;background:#fdecea;border:1px solid #f6cfc9;margin-bottom:6px;">'
-                           f'<span style="font-family:ui-monospace,monospace;font-size:12px;font-weight:700;color:#c0322b;flex-shrink:0;">{ts}</span>'
-                           f'<div style="min-width:0;"><div style="font-size:12.8px;color:#7a2a25;">{html.escape(s["text"])}</div>'
-                           f'<div style="margin-top:4px;">{terms}</div></div></div>')
-                else:
-                    tl += (f'<div style="display:flex;gap:10px;padding:7px 11px;border-bottom:1px solid #f1f3f8;">'
-                           f'<span style="font-family:ui-monospace,monospace;font-size:12px;color:#94a3b8;flex-shrink:0;">{ts}</span>'
-                           f'<span style="font-size:12.5px;color:#52617a;">{html.escape(s["text"])}</span></div>')
-            st.markdown(f'<div class="lb-anim" style="background:#fff;border:1px solid #e6eaf1;border-radius:12px;padding:12px 14px;">{tl}</div>', unsafe_allow_html=True)
+        if media == "이미지":
+            st.image(f"{API}/reviews/{rec['id']}/media", use_container_width=True)
+            with st.expander("AI가 추출한 텍스트 보기"):
+                st.write(rec["content"])
+        else:
+            label = "추출 자막 · 위반 문구 하이라이트" if media == "영상" else "본문 카피 · 위반 문구 하이라이트"
+            st.markdown(
+                '<div class="lb-anim" style="background:#fff;border:1px solid #e6eaf1;border-radius:14px;padding:22px 24px;box-shadow:0 1px 2px rgba(16,24,40,.04);">'
+                f'<div style="font-size:11px;font-weight:700;color:#94a3b8;letter-spacing:.05em;margin-bottom:10px;">{label}</div>'
+                f'<p style="margin:0;font-size:16px;line-height:1.95;color:#27364e;word-break:keep-all;">{highlight(rec["content"], ai["rule_hits"])}</p>'
+                '</div>', unsafe_allow_html=True)
         st.markdown(
             '<div class="lb-anim" style="margin-top:18px;background:#fff;border:1px solid #e6eaf1;border-radius:12px;padding:4px 18px;">'
             + "".join(
@@ -535,7 +582,7 @@ def detail(rid):
         if not findings:
             st.markdown('<div class="lb-anim" style="background:#f3faf5;border:1px solid #d6efe0;border-radius:12px;padding:12px 14px;color:#15803d;font-weight:650;">'
                         + dot_span("green") + ' &nbsp;모든 심의 항목 이상 없음</div>', unsafe_allow_html=True)
-        for f in findings:
+        for i, f in enumerate(findings):
             sv = ("위반", "red") if f["sev"] == "high" else ("주의", "amber")
             phrases_html = ""
             if f["phrases"]:
@@ -546,7 +593,7 @@ def detail(rid):
                                 f'border:1px solid #e8ecf3;border-radius:8px;padding:8px 12px;margin:9px 0;">{chips}</div>')
             st.markdown(
                 f'<div class="lb-anim lb-finding" style="border:1px solid #e8ecf3;border-radius:12px;'
-                f'padding:13px 15px;margin-bottom:10px;background:#fff;">'
+                f'padding:13px 15px;margin-bottom:10px;background:#fff;animation-delay:{i * 0.12:.2f}s;animation-fill-mode:both;">'
                 f'<div style="display:flex;align-items:center;gap:9px;">{dot_span(sv[1], 6)}{badge(sv[0], sv[1])}'
                 f'<span style="font-size:13px;font-weight:750;color:#0f1b2d;">{html.escape(f["cat"])}</span></div>'
                 f'{phrases_html}'

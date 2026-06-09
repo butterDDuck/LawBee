@@ -531,11 +531,13 @@ const wrap = document.getElementById('segs');
 function mmss(t){var m=Math.floor(t/60),s=Math.floor(t%60);return (''+m).padStart(2,'0')+':'+(''+s).padStart(2,'0');}
 SEGS.forEach(function(s,i){
   var d=document.createElement('div'); d.id='seg'+i;
-  d.style.cssText='padding:7px 9px;border-radius:7px;margin-bottom:5px;font-size:12.5px;line-height:1.5;transition:all .2s;border:1px solid transparent;color:#52617a;';
+  d.style.cssText='padding:7px 9px;border-radius:7px;margin-bottom:5px;font-size:12.5px;line-height:1.5;transition:all .2s;border:1px solid transparent;color:#52617a;cursor:pointer;';
   var terms = s.flagged ? s.terms.map(function(t){return '<span style="background:#fdecea;color:#c0322b;border:1px solid #f6cfc9;border-radius:999px;padding:1px 7px;font-size:11px;font-weight:700;margin-left:4px;">'+t+'</span>';}).join('') : '';
   var k = s.kind==='화면' ? 'background:#f0eafc;color:#6d28d9;' : 'background:#eef2f8;color:#64748b;';
   var kindTag = '<span style="font-size:10px;font-weight:700;border-radius:4px;padding:1px 5px;margin-right:5px;'+k+'">'+s.kind+'</span>';
-  d.innerHTML='<span style="font-family:monospace;color:#94a3b8;">'+mmss(s.start)+'</span> '+kindTag+s.text+terms;
+  d.innerHTML='<span style="font-family:monospace;color:#2563eb;font-weight:700;">'+mmss(s.start)+'</span> '+kindTag+s.text+terms;
+  d.onclick=function(){ vid.currentTime=s.start; vid.play(); };
+  d.title='클릭하면 이 시점으로 이동';
   wrap.appendChild(d);
 });
 vid.addEventListener('timeupdate', function(){
@@ -594,11 +596,15 @@ def detail(rid):
             st.image(f"{API}/reviews/{rec['id']}/media", use_container_width=True)
             with st.expander("AI가 추출한 텍스트 보기"):
                 st.write(rec["content"])
+        elif media == "영상":
+            with st.expander("추출 자막 · 위반 문구 하이라이트 보기"):
+                st.markdown(
+                    f'<p style="margin:0;font-size:14px;line-height:1.9;color:#27364e;word-break:keep-all;">{highlight(rec["content"], ai["rule_hits"])}</p>',
+                    unsafe_allow_html=True)
         else:
-            label = "추출 자막 · 위반 문구 하이라이트" if media == "영상" else "본문 카피 · 위반 문구 하이라이트"
             st.markdown(
                 '<div class="lb-anim" style="background:#fff;border:1px solid #e6eaf1;border-radius:14px;padding:22px 24px;box-shadow:0 1px 2px rgba(16,24,40,.04);">'
-                f'<div style="font-size:11px;font-weight:700;color:#94a3b8;letter-spacing:.05em;margin-bottom:10px;">{label}</div>'
+                '<div style="font-size:11px;font-weight:700;color:#94a3b8;letter-spacing:.05em;margin-bottom:10px;">본문 카피 · 위반 문구 하이라이트</div>'
                 f'<p style="margin:0;font-size:16px;line-height:1.95;color:#27364e;word-break:keep-all;">{highlight(rec["content"], ai["rule_hits"])}</p>'
                 '</div>', unsafe_allow_html=True)
         st.markdown(

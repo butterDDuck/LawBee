@@ -51,16 +51,16 @@ def api_get(rid):
     return requests.get(f"{API}/reviews/{rid}", timeout=60).json()
 
 
-def api_create(content, media):
-    return requests.post(f"{API}/reviews", json={"content": content, "media": media}, timeout=180).json()
+def api_create(content, media, title=None):
+    return requests.post(f"{API}/reviews", json={"content": content, "media": media, "title": title}, timeout=180).json()
 
 
-def api_create_image(file_tuple):
-    return requests.post(f"{API}/reviews/image", files={"file": file_tuple}, timeout=180).json()
+def api_create_image(file_tuple, title=""):
+    return requests.post(f"{API}/reviews/image", files={"file": file_tuple}, data={"title": title}, timeout=180).json()
 
 
-def api_create_video(file_tuple):
-    return requests.post(f"{API}/reviews/video", files={"file": file_tuple}, timeout=600).json()
+def api_create_video(file_tuple, title=""):
+    return requests.post(f"{API}/reviews/video", files={"file": file_tuple}, data={"title": title}, timeout=600).json()
 
 
 def api_decide(rid, decision, comment, reviewer):
@@ -69,6 +69,10 @@ def api_decide(rid, decision, comment, reviewer):
         json={"decision": decision, "comment": comment, "reviewer": reviewer},
         timeout=60,
     ).json()
+
+
+def api_delete(rid):
+    return requests.delete(f"{API}/reviews/{rid}", timeout=30)
 
 
 # --- 데이터 파생 (실데이터 → 디자인 모델) ---
@@ -121,6 +125,8 @@ def counts_of(findings):
 
 
 def title_of(rec):
+    if rec.get("title"):
+        return rec["title"]
     t = rec["content"].strip().splitlines()[0]
     return (t[:80] + "…") if len(t) > 80 else t
 
@@ -216,11 +222,19 @@ mark{text-decoration:none;}
 
 /* 목록 흰색 카드 */
 [class*="st-key-listcard"]{background:#fff !important;border:1px solid #e6eaf1 !important;
-  border-radius:14px !important;box-shadow:0 2px 8px rgba(16,24,40,.05);}
-/* 검수 리스트 — 행 전체가 HTML 링크 */
-a.lb-row{transition:background .12s ease;animation:fadeIn .3s ease;color:inherit;}
-a.lb-row:hover{background:#f6f9ff;}
-a.lb-row:last-child{border-bottom:none !important;}
+  border-radius:14px !important;box-shadow:0 2px 8px rgba(16,24,40,.05);
+  padding:8px 26px 18px !important;}
+/* 검수 리스트 — 행 링크 + 네이티브 체크박스 */
+a.lb-row{color:inherit;transition:background .12s ease;animation:fadeIn .3s ease;border-radius:6px;display:block;}
+a.lb-row:hover{background:#f8fafe;}
+[class*="st-key-listcard"] [data-testid="stVerticalBlock"]{gap:.2rem;}
+[class*="st-key-listcard"] [data-testid="stHorizontalBlock"]{gap:.4rem;}
+/* 선택 삭제 버튼 (빨강) */
+[class*="st-key-bulk-del-btn"] button{color:#c0322b !important;border-color:#f0c9c4 !important;}
+[class*="st-key-bulk-del-btn"] button:hover{background:#fdecea !important;border-color:#f6cfc9 !important;}
+/* 삭제 확인 모달의 삭제 버튼 (빨강) */
+[class*="st-key-del-confirm"] button{background:linear-gradient(180deg,#e15a52,#c0322b) !important;
+  border:none !important;color:#fff !important;font-weight:800;}
 a[href="?view=dashboard"]:hover div{color:#fff;}
 
 @keyframes fadeIn{from{opacity:0;transform:translateY(7px);}to{opacity:1;transform:none;}}
@@ -315,8 +329,33 @@ def live_dot(text):
 
 # --- 화면: 대시보드 ---
 
+@st.dialog("선택 항목 삭제")
+def _confirm_delete(ids):
+    st.markdown(
+        f'<div style="font-size:14.5px;color:#27364e;line-height:1.6;">선택한 <b>{len(ids)}건</b>을 삭제하시겠습니까?</div>'
+        f'<div style="font-size:12.5px;color:#94a3b8;margin-top:6px;">'
+        + ", ".join(f"RV-{i:04d}" for i in ids) + ' · 되돌릴 수 없습니다</div>',
+        unsafe_allow_html=True)
+    st.write("")
+    c1, c2 = st.columns(2)
+    if c1.button("취소", use_container_width=True, key="del-cancel"):
+        st.session_state.pop("pending_bulk", None)
+        st.rerun()
+    if c2.button("삭제", type="primary", use_container_width=True, key="del-confirm"):
+        for i in ids:
+            api_delete(i)
+            st.session_state.pop(f"sel-{i}", None)
+        st.session_state.pop("pending_bulk", None)
+        st.toast(f"{len(ids)}건 삭제됨")
+        st.rerun()
+
+
 def dashboard():
     topbar("준법심의 콘솔", "검수 대시보드", live_dot("AI 1차 심의 자동 적용 중"))
+
+    if st.session_state.get("pending_bulk"):
+        _confirm_delete(sorted(st.session_state["pending_bulk"]))
+
     try:
         reviews = api_list()
     except requests.RequestException:
@@ -346,34 +385,39 @@ def dashboard():
     flt = st.segmented_control("상태", ["전체", "대기", "승인", "조건부승인", "반려"],
                                default="전체", label_visibility="collapsed")
 
-    with st.container(border=True, key="listcard"):
-        c1, c2, c3, c4 = st.columns([1.7, 1.7, 0.95, 1.05], vertical_alignment="center")
-        count_ph = c1.empty()
-        q = c2.text_input("검색", placeholder="제목·번호 검색", label_visibility="collapsed")
-        media = c3.selectbox("매체", ["모든 매체"] + MEDIA_OPTIONS, label_visibility="collapsed")
-        if c4.button(":material/add: 새 검수 요청", type="primary", use_container_width=True, key="new-review-btn"):
-            go("new")
+    # 툴바 — 카드 밖 위에 배치
+    tc1, tc2, tc3, tc4 = st.columns([3.6, 1.15, 1.25, 0.5], vertical_alignment="center")
+    q = tc1.text_input("검색", placeholder="제목·번호 검색", label_visibility="collapsed")
+    media = tc2.selectbox("매체", ["모든 매체"] + MEDIA_OPTIONS, label_visibility="collapsed")
+    if tc3.button(":material/add: 새 검수 요청", type="primary", use_container_width=True, key="new-review-btn"):
+        go("new")
+    rows = [r for r in reviews
+            if (flt in (None, "전체") or r["decision_status"] == flt)
+            and (media == "모든 매체" or r["media"] == media)
+            and (not q or q in title_of(r) or q in f"RV-{r['id']:04d}")]
+    selected = [r["id"] for r in rows if st.session_state.get(f"sel-{r['id']}")]
+    if tc4.button(f":material/delete: {len(selected) or ''}".strip() or ":material/delete:", use_container_width=True,
+                  key="bulk-del-btn", disabled=not selected, help="선택 항목 삭제"):
+        st.session_state["pending_bulk"] = set(selected)
+        st.rerun()
 
-        rows = [r for r in reviews
-                if (flt in (None, "전체") or r["decision_status"] == flt)
-                and (media == "모든 매체" or r["media"] == media)
-                and (not q or q in title_of(r) or q in f"RV-{r['id']:04d}")]
-        count_ph.markdown(
-            f'<div style="font-weight:750;font-size:14.5px;color:#0f1b2d;padding-top:7px;">검수 목록 &nbsp;'
-            f'<span style="font-size:12px;color:#64748b;background:#eef1f6;border:1px solid #dde3ec;border-radius:999px;padding:2px 9px;">{len(rows)}건</span></div>',
+    with st.container(border=True, key="listcard"):
+        st.markdown(
+            f'<div style="font-weight:800;font-size:18px;color:#0f1b2d;letter-spacing:-.01em;padding-bottom:8px;padding-top:8px;">검수 목록 &nbsp;'
+            f'<span style="font-size:12.5px;font-weight:700;color:#64748b;background:#eef1f6;border:1px solid #dde3ec;border-radius:999px;padding:2px 9px;vertical-align:middle;">{len(rows)}건</span></div>',
             unsafe_allow_html=True)
 
-        grid = "minmax(230px,1fr) 112px 120px 162px 116px 56px"
+        grid = "minmax(180px,3.7fr) 0.64fr 0.74fr 0.92fr 0.52fr 0.42fr"
         heads = ["콘텐츠 / 요청", "매체", "AI 심의결과", "발견 항목", "처리 상태", ""]
-        header = (f'<div style="display:grid;grid-template-columns:{grid};gap:12px;padding:10px 18px;'
-                  f'border-bottom:1px solid #eef1f6;font-size:11.5px;font-weight:700;color:#8593a8;">'
-                  + "".join(f"<div>{h}</div>" for h in heads) + "</div>")
+        hc = st.columns([0.032, 0.968], gap="small", vertical_alignment="center")
+        hc[1].markdown(
+            f'<div style="display:grid;grid-template-columns:{grid};gap:12px;padding:4px 4px 8px;'
+            f'font-size:11.5px;font-weight:700;color:#8593a8;">'
+            + "".join(f"<div>{h}</div>" for h in heads) + "</div>", unsafe_allow_html=True)
         if not rows:
-            st.markdown(header, unsafe_allow_html=True)
             st.info("조건에 맞는 검수 건이 없습니다.")
             return
 
-        rows_html = ""
         for r in rows:
             ai = r["ai_result"]
             high, mid = counts_of(build_findings(ai))
@@ -386,10 +430,12 @@ def dashboard():
             trail = ('<span style="font-size:12px;font-weight:700;color:#2563eb;">결재 ›</span>'
                      if r["decision_status"] == "대기"
                      else '<span style="font-size:11.5px;color:#b9c2d0;">완료 ›</span>')
-            rows_html += (
-                f'<a class="lb-row" href="?rid={r["id"]}" target="_self" '
-                f'style="display:grid;grid-template-columns:{grid};gap:12px;align-items:center;'
-                f'padding:11px 18px;border-bottom:1px solid #f1f3f8;text-decoration:none;">'
+            rc = st.columns([0.032, 0.968], gap="small", vertical_alignment="center")
+            rc[0].checkbox("선택", key=f"sel-{r['id']}", label_visibility="collapsed")
+            rc[1].markdown(
+                f'<a class="lb-row" href="?rid={r["id"]}" target="_self" style="text-decoration:none;display:block;">'
+                f'<div style="display:grid;grid-template-columns:{grid};gap:12px;align-items:center;'
+                f'padding:8px 4px;border-bottom:1px solid #f1f3f8;">'
                 f'<div style="display:flex;align-items:center;gap:12px;min-width:0;">{score_ring(score, 34, 4)}'
                 f'<div style="min-width:0;"><div style="font-size:13.5px;font-weight:700;color:#0f1b2d;letter-spacing:-.01em;'
                 f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{html.escape(title_of(r))}</div>'
@@ -398,9 +444,8 @@ def dashboard():
                 f'<div>{badge(vlabel, vtone, dot=True, sm=True)}</div>'
                 f'<div>{fb}</div>'
                 f'<div>{badge(slabel, stone, sm=True)}</div>'
-                f'<div style="text-align:right;">{trail}</div></a>'
-            )
-        st.markdown(header + rows_html, unsafe_allow_html=True)
+                f'<div style="text-align:right;">{trail}</div></div></a>',
+                unsafe_allow_html=True)
 
 
 # --- 화면: 새 검수 요청 ---
@@ -415,6 +460,9 @@ def _ai_guide(msg="AI가 본문을 분석해 위반·주의 항목과 수정 제
 def new_review():
     topbar("준법심의 콘솔", "새 검수 요청", live_dot("AI 1차 심의 자동 실행"))
     mode = st.radio("입력 방식", ["텍스트", "이미지", "영상"], horizontal=True, label_visibility="collapsed")
+    st.markdown('**제목** <span style="color:#dc4338;">*</span>', unsafe_allow_html=True)
+    title = st.text_input("제목", label_visibility="collapsed",
+                          placeholder="예) 신규 정기적금 「드림플러스」 출시 배너")
     left, right = st.columns([2, 1])
 
     if mode == "텍스트":
@@ -431,9 +479,9 @@ def new_review():
             media = st.selectbox("매체 (채널)", MEDIA_OPTIONS)
             _ai_guide()
         st.write("")
-        if st.button("AI 심의 요청", type="primary", disabled=not body.strip()):
+        if st.button("AI 심의 요청", type="primary", disabled=not (body.strip() and title.strip())):
             with st.spinner("AI 1차 심의 진행 중…"):
-                rec = api_create(body, media)
+                rec = api_create(body, media, title.strip())
             st.session_state.pop("draft", None)
             go("detail", rec["id"])
 
@@ -445,9 +493,9 @@ def new_review():
         with right:
             _ai_guide("이미지의 문구와 시각 구성을 추출해 심의합니다. 배너·캡처 등을 업로드하십시오.")
         st.write("")
-        if st.button("AI 심의 요청", type="primary", disabled=up is None):
+        if st.button("AI 심의 요청", type="primary", disabled=(up is None or not title.strip())):
             with st.spinner("이미지에서 문구 추출 + 심의 중…"):
-                rec = api_create_image((up.name, up.getvalue(), up.type))
+                rec = api_create_image((up.name, up.getvalue(), up.type), title.strip())
             go("detail", rec["id"])
 
     else:  # 영상
@@ -456,11 +504,11 @@ def new_review():
             if up:
                 st.video(up)
         with right:
-            _ai_guide("영상 자막을 추출해 구간별로 심의하고, 위반 문구를 타임라인에 표시합니다.")
+            _ai_guide("영상의 음성·화면을 분석해 구간별로 심의하고, 위반을 타임라인에 표시합니다.")
         st.write("")
-        if st.button("AI 심의 요청", type="primary", disabled=up is None):
-            with st.spinner("자막 추출 + 심의 중… (영상 길이에 따라 시간이 걸립니다)"):
-                rec = api_create_video((up.name, up.getvalue(), up.type))
+        if st.button("AI 심의 요청", type="primary", disabled=(up is None or not title.strip())):
+            with st.spinner("음성·화면 분석 + 심의 중… (영상 길이에 따라 시간이 걸립니다)"):
+                rec = api_create_video((up.name, up.getvalue(), up.type), title.strip())
             go("detail", rec["id"])
 
 
@@ -485,7 +533,9 @@ SEGS.forEach(function(s,i){
   var d=document.createElement('div'); d.id='seg'+i;
   d.style.cssText='padding:7px 9px;border-radius:7px;margin-bottom:5px;font-size:12.5px;line-height:1.5;transition:all .2s;border:1px solid transparent;color:#52617a;';
   var terms = s.flagged ? s.terms.map(function(t){return '<span style="background:#fdecea;color:#c0322b;border:1px solid #f6cfc9;border-radius:999px;padding:1px 7px;font-size:11px;font-weight:700;margin-left:4px;">'+t+'</span>';}).join('') : '';
-  d.innerHTML='<span style="font-family:monospace;color:#94a3b8;">'+mmss(s.start)+'</span> '+s.text+terms;
+  var k = s.kind==='화면' ? 'background:#f0eafc;color:#6d28d9;' : 'background:#eef2f8;color:#64748b;';
+  var kindTag = '<span style="font-size:10px;font-weight:700;border-radius:4px;padding:1px 5px;margin-right:5px;'+k+'">'+s.kind+'</span>';
+  d.innerHTML='<span style="font-family:monospace;color:#94a3b8;">'+mmss(s.start)+'</span> '+kindTag+s.text+terms;
   wrap.appendChild(d);
 });
 vid.addEventListener('timeupdate', function(){
@@ -508,7 +558,8 @@ vid.addEventListener('timeupdate', function(){
 def _video_review(rid, timeline):
     """영상 재생 + 재생 시각 동기화 실시간 위반 피드 (클라이언트 사이드)"""
     segs = json.dumps(
-        [{"start": s["start"], "end": s["end"], "text": s["text"], "flagged": s["flagged"], "terms": s["terms"]}
+        [{"start": s["start"], "end": s["end"], "text": s["text"], "flagged": s["flagged"],
+          "terms": s["terms"], "kind": s.get("kind", "음성")}
          for s in timeline], ensure_ascii=False)
     out = _VIDEO_TPL.replace("__URL__", f"{API}/reviews/{rid}/media").replace("__SEGS__", segs)
     components.html(out, height=440)
@@ -664,7 +715,7 @@ def main():
     st.markdown(CSS, unsafe_allow_html=True)
     st.session_state.setdefault("view", "dashboard")
     st.session_state.setdefault("rid", None)
-    # URL 쿼리파라미터로 라우팅 (?rid= 상세, ?view= 화면 전환)
+    # URL 쿼리파라미터로 라우팅 (?rid= 상세, ?view= 화면 전환, ?del= 삭제 확인)
     rid_q = st.query_params.get("rid")
     view_q = st.query_params.get("view")
     if rid_q:

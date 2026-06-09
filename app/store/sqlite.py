@@ -68,6 +68,18 @@ def create_review(content: str, media: str | None = None) -> ReviewRecord:
     return get_review(review_id)
 
 
+def create_with_result(content: str, media: str, result: ReviewResult) -> ReviewRecord:
+    """사전 계산된 심의 결과로 대기 상태 저장 (멀티모달 등 전처리가 필요한 경우)"""
+    init_db()
+    with _conn() as c:
+        cur = c.execute(
+            "INSERT INTO reviews (content, media, ai_result, created_at) VALUES (?, ?, ?, ?)",
+            (content, media, result.model_dump_json(), _now()),
+        )
+        review_id = cur.lastrowid
+    return get_review(review_id)
+
+
 def list_reviews(status: DecisionStatus | None = None) -> list[ReviewRecord]:
     """심의 건 목록 조회 (상태 필터 가능), 최신순"""
     init_db()

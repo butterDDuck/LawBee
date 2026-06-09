@@ -53,6 +53,14 @@ def api_create(content, media):
     return requests.post(f"{API}/reviews", json={"content": content, "media": media}, timeout=180).json()
 
 
+def api_create_image(file_tuple):
+    return requests.post(f"{API}/reviews/image", files={"file": file_tuple}, timeout=180).json()
+
+
+def api_create_video(file_tuple):
+    return requests.post(f"{API}/reviews/video", files={"file": file_tuple}, timeout=600).json()
+
+
 def api_decide(rid, decision, comment, reviewer):
     return requests.post(
         f"{API}/reviews/{rid}/decision",
@@ -72,25 +80,37 @@ def ai_score(ai):
 
 
 def build_findings(ai):
-    """룰 탐지 + LLM 위반을 통합 finding 목록으로"""
-    out = []
+    """룰 탐지 + LLM 위반을 카테고리별로 병합한 finding 목록으로"""
+    rank = {"high": 2, "mid": 1}
+    by_cat: dict[str, dict] = {}
+
+    def ensure(cat):
+        if cat not in by_cat:
+            by_cat[cat] = {"cat": cat, "sev": "mid", "phrases": [], "issue": "", "rule": ""}
+        return by_cat[cat]
+
     for h in ai["rule_hits"]:
-        out.append({
-            "sev": "high" if h["severity"] == "high" else "mid",
-            "cat": h["category"], "phrase": h["term"],
-            "issue": h["message"], "rule": "룰 엔진 1차 탐지", "fix": "",
-        })
+        f = ensure(h["category"])
+        sev = "high" if h["severity"] == "high" else "mid"
+        if rank[sev] > rank[f["sev"]]:
+            f["sev"] = sev
+        if h["term"] not in f["phrases"]:
+            f["phrases"].append(h["term"])
+        f["issue"] = f["issue"] or h["message"]
+        f["rule"] = f["rule"] or "룰 엔진 1차 탐지"
+
     cmap = {c["id"]: c for c in ai["citations"]}
+    vsev = "high" if ai["status"] == "위반" else "mid"
     for v in ai["violations"]:
-        rule = "; ".join(
-            f"{cmap[i]['law']} {cmap[i]['article']}" for i in v["citation_ids"] if i in cmap
-        ) or "근거 조항 참조"
-        out.append({
-            "sev": "high" if ai["status"] == "위반" else "mid",
-            "cat": v["type"], "phrase": "", "issue": v["reason"],
-            "rule": rule, "fix": ai.get("alternative_text") or "",
-        })
-    return out
+        f = ensure(v["type"])
+        if rank[vsev] > rank[f["sev"]]:
+            f["sev"] = vsev
+        f["issue"] = v["reason"]  # LLM 설명을 우선
+        rule = "; ".join(f"{cmap[i]['law']} {cmap[i]['article']}" for i in v["citation_ids"] if i in cmap)
+        if rule:
+            f["rule"] = rule
+
+    return list(by_cat.values())
 
 
 def counts_of(findings):
@@ -260,11 +280,8 @@ def sidebar():
         if pending:
             dash_label += f" :gray-badge[{pending}]"
         if st.button(dash_label, use_container_width=True, key="nav-dash",
-                     type="primary" if view in ("dashboard", "detail") else "secondary"):
+                     type="primary" if view in ("dashboard", "detail", "new") else "secondary"):
             go("dashboard")
-        if st.button(":material/add: 새 검수 요청", use_container_width=True, key="nav-new",
-                     type="primary" if view == "new" else "secondary"):
-            go("new")
         for icon, label in [("menu_book", "심의 규정"), ("history", "결재 이력"), ("bar_chart", "통계·리포트")]:
             if st.button(f":material/{icon}: {label}", use_container_width=True, key=f"nav-{label}"):
                 st.toast("준비 중인 메뉴입니다")
@@ -328,10 +345,12 @@ def dashboard():
                                default="전체", label_visibility="collapsed")
 
     with st.container(border=True, key="listcard"):
-        c1, c2, c3 = st.columns([2.2, 2, 1])
+        c1, c2, c3, c4 = st.columns([1.7, 1.7, 0.95, 1.05], vertical_alignment="center")
         count_ph = c1.empty()
         q = c2.text_input("검색", placeholder="제목·번호 검색", label_visibility="collapsed")
         media = c3.selectbox("매체", ["모든 매체"] + MEDIA_OPTIONS, label_visibility="collapsed")
+        if c4.button(":material/add: 새 검수 요청", type="primary", use_container_width=True, key="new-review-btn"):
+            go("new")
 
         rows = [r for r in reviews
                 if (flt in (None, "전체") or r["decision_status"] == flt)
@@ -384,33 +403,63 @@ def dashboard():
 
 # --- 화면: 새 검수 요청 ---
 
+def _ai_guide(msg="AI가 본문을 분석해 위반·주의 항목과 수정 제안을 자동 생성합니다. 결과는 준법관리자가 검토·결재합니다."):
+    st.markdown(
+        '<div class="lb-anim" style="padding:12px 14px;border-radius:12px;background:#0e1626;color:#9fb0d0;font-size:11.8px;line-height:1.6;">'
+        f'<div style="font-weight:700;color:#fff;margin-bottom:5px;">AI 심의 안내</div>{msg}</div>',
+        unsafe_allow_html=True)
+
+
 def new_review():
     topbar("준법심의 콘솔", "새 검수 요청", live_dot("AI 1차 심의 자동 실행"))
+    mode = st.radio("입력 방식", ["텍스트", "이미지", "영상"], horizontal=True, label_visibility="collapsed")
     left, right = st.columns([2, 1])
-    with left:
-        st.markdown('**광고/콘텐츠 본문** <span style="color:#dc4338;">*</span>', unsafe_allow_html=True)
-        if st.button("샘플 카피 불러오기"):
-            st.session_state["draft"] = ("내 통장이 매달 불어나는 가장 확실한 방법, 원금 손실 걱정 없이 누구나 "
-                                         "최고 연 5.0% 수익을 무조건 보장해 드립니다. 업계 1위 드림은행 「드림플러스」 "
-                                         "적금으로 지금 바로 시작하세요. 선착순 1만 좌 한정!")
-        body = st.text_area("콘텐츠 본문", value=st.session_state.get("draft", ""),
-                            height=200, label_visibility="collapsed",
-                            placeholder="광고 카피·영상 스크립트·본문 텍스트를 입력하십시오")
-    with right:
-        media = st.selectbox("매체 (채널)", MEDIA_OPTIONS)
-        st.file_uploader("이미지·영상 첨부", disabled=True, help="멀티모달 전처리(#13) 연동 예정")
-        st.markdown(
-            '<div class="lb-anim" style="padding:12px 14px;border-radius:12px;background:#0e1626;color:#9fb0d0;font-size:11.8px;line-height:1.6;">'
-            '<div style="font-weight:700;color:#fff;margin-bottom:5px;">AI 심의 안내</div>'
-            'AI가 본문을 분석해 위반·주의 항목과 수정 제안을 자동 생성합니다. 결과는 준법관리자이 검토·결재합니다.</div>',
-            unsafe_allow_html=True)
 
-    st.write("")
-    if st.button("AI 심의 요청", type="primary", disabled=not body.strip()):
-        with st.spinner("AI 1차 심의 진행 중…"):
-            rec = api_create(body, media)
-        st.session_state.pop("draft", None)
-        go("detail", rec["id"])
+    if mode == "텍스트":
+        with left:
+            st.markdown('**광고/콘텐츠 본문** <span style="color:#dc4338;">*</span>', unsafe_allow_html=True)
+            if st.button("샘플 카피 불러오기"):
+                st.session_state["draft"] = ("내 통장이 매달 불어나는 가장 확실한 방법, 원금 손실 걱정 없이 누구나 "
+                                             "최고 연 5.0% 수익을 무조건 보장해 드립니다. 업계 1위 드림은행 「드림플러스」 "
+                                             "적금으로 지금 바로 시작하세요. 선착순 1만 좌 한정!")
+            body = st.text_area("콘텐츠 본문", value=st.session_state.get("draft", ""),
+                                height=200, label_visibility="collapsed",
+                                placeholder="광고 카피·영상 스크립트·본문 텍스트를 입력하십시오")
+        with right:
+            media = st.selectbox("매체 (채널)", MEDIA_OPTIONS)
+            _ai_guide()
+        st.write("")
+        if st.button("AI 심의 요청", type="primary", disabled=not body.strip()):
+            with st.spinner("AI 1차 심의 진행 중…"):
+                rec = api_create(body, media)
+            st.session_state.pop("draft", None)
+            go("detail", rec["id"])
+
+    elif mode == "이미지":
+        with left:
+            up = st.file_uploader("이미지 첨부", type=["png", "jpg", "jpeg", "webp"])
+            if up:
+                st.image(up, use_container_width=True)
+        with right:
+            _ai_guide("이미지의 문구와 시각 구성을 추출해 심의합니다. 배너·캡처 등을 업로드하십시오.")
+        st.write("")
+        if st.button("AI 심의 요청", type="primary", disabled=up is None):
+            with st.spinner("이미지에서 문구 추출 + 심의 중…"):
+                rec = api_create_image((up.name, up.getvalue(), up.type))
+            go("detail", rec["id"])
+
+    else:  # 영상
+        with left:
+            up = st.file_uploader("영상 첨부", type=["mp4", "mov", "webm", "m4a", "mp3", "wav"])
+            if up:
+                st.video(up)
+        with right:
+            _ai_guide("영상 자막을 추출해 구간별로 심의하고, 위반 문구를 타임라인에 표시합니다.")
+        st.write("")
+        if st.button("AI 심의 요청", type="primary", disabled=up is None):
+            with st.spinner("자막 추출 + 심의 중… (영상 길이에 따라 시간이 걸립니다)"):
+                rec = api_create_video((up.name, up.getvalue(), up.type))
+            go("detail", rec["id"])
 
 
 # --- 화면: 검수·결재 상세 ---
@@ -438,8 +487,22 @@ def detail(rid):
             '<div style="font-size:11px;font-weight:700;color:#94a3b8;letter-spacing:.05em;margin-bottom:10px;">본문 카피 · 위반 문구 하이라이트</div>'
             f'<p style="margin:0;font-size:16px;line-height:1.95;color:#27364e;word-break:keep-all;">{highlight(rec["content"], ai["rule_hits"])}</p>'
             '</div>', unsafe_allow_html=True)
-        if rec["media"] in ("영상", "UI"):
-            st.caption("영상·UI 미리보기 및 타임스탬프 안내는 멀티모달 전처리(#13) 연동 예정")
+        if ai.get("timeline"):
+            st.markdown('<div style="font-size:13px;font-weight:800;color:#0f1b2d;margin:18px 0 8px;">영상 타임라인 · 구간별 위반</div>', unsafe_allow_html=True)
+            tl = ""
+            for s in ai["timeline"]:
+                ts = f'{int(s["start"] // 60):02d}:{int(s["start"] % 60):02d}'
+                if s["flagged"]:
+                    terms = " ".join(badge(t, "red", sm=True) for t in s["terms"])
+                    tl += (f'<div style="display:flex;gap:10px;padding:8px 11px;border-radius:8px;background:#fdecea;border:1px solid #f6cfc9;margin-bottom:6px;">'
+                           f'<span style="font-family:ui-monospace,monospace;font-size:12px;font-weight:700;color:#c0322b;flex-shrink:0;">{ts}</span>'
+                           f'<div style="min-width:0;"><div style="font-size:12.8px;color:#7a2a25;">{html.escape(s["text"])}</div>'
+                           f'<div style="margin-top:4px;">{terms}</div></div></div>')
+                else:
+                    tl += (f'<div style="display:flex;gap:10px;padding:7px 11px;border-bottom:1px solid #f1f3f8;">'
+                           f'<span style="font-family:ui-monospace,monospace;font-size:12px;color:#94a3b8;flex-shrink:0;">{ts}</span>'
+                           f'<span style="font-size:12.5px;color:#52617a;">{html.escape(s["text"])}</span></div>')
+            st.markdown(f'<div class="lb-anim" style="background:#fff;border:1px solid #e6eaf1;border-radius:12px;padding:12px 14px;">{tl}</div>', unsafe_allow_html=True)
         st.markdown(
             '<div class="lb-anim" style="margin-top:18px;background:#fff;border:1px solid #e6eaf1;border-radius:12px;padding:4px 18px;">'
             + "".join(
@@ -474,23 +537,32 @@ def detail(rid):
                         + dot_span("green") + ' &nbsp;모든 심의 항목 이상 없음</div>', unsafe_allow_html=True)
         for f in findings:
             sv = ("위반", "red") if f["sev"] == "high" else ("주의", "amber")
-            c = TONE[sv[1]]
-            phrase_html = (f'<div style="font-size:13.5px;color:#27364e;font-weight:600;background:#f6f8fc;'
-                           f'border:1px solid #e8ecf3;border-radius:8px;padding:8px 12px;margin:9px 0;">'
-                           f'<span style="color:#b0bacb;">“</span> {html.escape(f["phrase"])} <span style="color:#b0bacb;">”</span></div>') if f["phrase"] else ""
-            fix_html = (f'<div style="background:#f0f6ff;border:1px solid #d4e3fb;border-radius:9px;padding:10px 12px;margin-top:8px;">'
-                        f'<span style="font-size:11.5px;font-weight:800;color:#1d4ed8;">AI 수정 제안</span>'
-                        f'<div style="font-size:12.8px;color:#27364e;line-height:1.6;margin-top:4px;">{html.escape(f["fix"])}</div></div>') if f["fix"] else ""
+            phrases_html = ""
+            if f["phrases"]:
+                chips = "  ".join(
+                    f'<span style="color:#b0bacb;">“</span> {html.escape(p)} <span style="color:#b0bacb;">”</span>'
+                    for p in f["phrases"])
+                phrases_html = (f'<div style="font-size:13.5px;color:#27364e;font-weight:600;background:#f6f8fc;'
+                                f'border:1px solid #e8ecf3;border-radius:8px;padding:8px 12px;margin:9px 0;">{chips}</div>')
             st.markdown(
                 f'<div class="lb-anim lb-finding" style="border:1px solid #e8ecf3;border-radius:12px;'
                 f'padding:13px 15px;margin-bottom:10px;background:#fff;">'
                 f'<div style="display:flex;align-items:center;gap:9px;">{dot_span(sv[1], 6)}{badge(sv[0], sv[1])}'
                 f'<span style="font-size:13px;font-weight:750;color:#0f1b2d;">{html.escape(f["cat"])}</span></div>'
-                f'{phrase_html}'
+                f'{phrases_html}'
                 f'<div style="font-size:12.8px;color:#3a4a63;line-height:1.6;margin-top:6px;"><b style="color:#8593a8;">문제점</b> · {html.escape(f["issue"])}</div>'
                 f'<div style="font-size:12.5px;color:#3a4a63;margin-top:5px;"><b style="color:#8593a8;">근거 규정</b> · '
-                f'<span style="font-family:ui-monospace,monospace;">{html.escape(f["rule"])}</span></div>'
-                f'{fix_html}</div>',
+                f'<span style="font-family:ui-monospace,monospace;">{html.escape(f["rule"])}</span></div></div>',
+                unsafe_allow_html=True)
+
+        # AI 수정 제안 — 전체 콘텐츠에 대한 단일 대안 문구 (1회만)
+        if ai.get("alternative_text"):
+            st.markdown(
+                f'<div class="lb-anim" style="background:#f0f6ff;border:1px solid #d4e3fb;border-radius:12px;padding:13px 15px;margin-top:4px;">'
+                f'<div style="display:flex;align-items:center;gap:7px;margin-bottom:6px;">'
+                f'<div style="width:22px;height:22px;border-radius:6px;background:linear-gradient(145deg,#3b82f6,#1d4ed8);display:grid;place-items:center;font-size:9px;font-weight:800;color:#fff;">AI</div>'
+                f'<span style="font-size:13px;font-weight:800;color:#1d4ed8;">AI 수정 제안</span></div>'
+                f'<div style="font-size:13px;color:#27364e;line-height:1.65;">{html.escape(ai["alternative_text"])}</div></div>',
                 unsafe_allow_html=True)
 
         st.write("")

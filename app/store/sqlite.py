@@ -39,12 +39,18 @@ def init_db() -> None:
             )
             """
         )
+        # 기존 DB 마이그레이션 — title 컬럼 추가
+        try:
+            c.execute("ALTER TABLE reviews ADD COLUMN title TEXT")
+        except sqlite3.OperationalError:
+            pass
 
 
 def _to_record(row: sqlite3.Row) -> ReviewRecord:
     return ReviewRecord(
         id=row["id"],
         content=row["content"],
+        title=row["title"],
         media=row["media"],
         decision_status=row["decision_status"],
         ai_result=ReviewResult.model_validate_json(row["ai_result"]),
@@ -55,26 +61,26 @@ def _to_record(row: sqlite3.Row) -> ReviewRecord:
     )
 
 
-def create_review(content: str, media: str | None = None) -> ReviewRecord:
+def create_review(content: str, media: str | None = None, title: str | None = None) -> ReviewRecord:
     """콘텐츠 제출 → AI 1차 심의 실행 → 대기 상태로 저장"""
     result = run_review(content, media=media)
     init_db()
     with _conn() as c:
         cur = c.execute(
-            "INSERT INTO reviews (content, media, ai_result, created_at) VALUES (?, ?, ?, ?)",
-            (content, media, result.model_dump_json(), _now()),
+            "INSERT INTO reviews (content, title, media, ai_result, created_at) VALUES (?, ?, ?, ?, ?)",
+            (content, title, media, result.model_dump_json(), _now()),
         )
         review_id = cur.lastrowid
     return get_review(review_id)
 
 
-def create_with_result(content: str, media: str, result: ReviewResult) -> ReviewRecord:
+def create_with_result(content: str, media: str, result: ReviewResult, title: str | None = None) -> ReviewRecord:
     """사전 계산된 심의 결과로 대기 상태 저장 (멀티모달 등 전처리가 필요한 경우)"""
     init_db()
     with _conn() as c:
         cur = c.execute(
-            "INSERT INTO reviews (content, media, ai_result, created_at) VALUES (?, ?, ?, ?)",
-            (content, media, result.model_dump_json(), _now()),
+            "INSERT INTO reviews (content, title, media, ai_result, created_at) VALUES (?, ?, ?, ?, ?)",
+            (content, title, media, result.model_dump_json(), _now()),
         )
         review_id = cur.lastrowid
     return get_review(review_id)
@@ -99,6 +105,14 @@ def get_review(review_id: int) -> ReviewRecord | None:
     with _conn() as c:
         row = c.execute("SELECT * FROM reviews WHERE id = ?", (review_id,)).fetchone()
     return _to_record(row) if row else None
+
+
+def delete_review(review_id: int) -> bool:
+    """심의 건 삭제, 삭제 성공 여부 반환"""
+    init_db()
+    with _conn() as c:
+        cur = c.execute("DELETE FROM reviews WHERE id = ?", (review_id,))
+    return cur.rowcount > 0
 
 
 def decide(

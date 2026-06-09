@@ -51,6 +51,16 @@ class Judgment(BaseModel):
     violations: list[Violation] = Field(default_factory=list)
 
 
+class TimelineSegment(BaseModel):
+    """영상 자막 구간 (위반 문구 타임스탬프 매핑)"""
+
+    start: float = Field(..., description="시작 시각(초)")
+    end: float = Field(..., description="종료 시각(초)")
+    text: str = Field(..., description="구간 자막")
+    flagged: bool = Field(False, description="위반 문구 포함 여부")
+    terms: list[str] = Field(default_factory=list, description="구간에서 탐지된 위반 문구")
+
+
 class ReviewResult(BaseModel):
     """심의 파이프라인 최종 반환값"""
 
@@ -60,6 +70,7 @@ class ReviewResult(BaseModel):
     violations: list[Violation] = Field(default_factory=list)
     citations: list[Citation] = Field(default_factory=list)
     alternative_text: str | None = Field(None, description="위반 시 제안하는 대안 문구")
+    timeline: list[TimelineSegment] = Field(default_factory=list, description="영상 구간별 위반 타임라인")
 
 
 class DecisionRequest(BaseModel):

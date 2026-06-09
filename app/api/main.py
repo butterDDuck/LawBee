@@ -3,7 +3,7 @@
 실행:
     uvicorn app.api.main:app --reload
 """
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, HTTPException, UploadFile
 
 from app import store
 from app.domain.schema import (
@@ -12,7 +12,10 @@ from app.domain.schema import (
     ReviewRecord,
     ReviewRequest,
     ReviewResult,
+    TimelineSegment,
 )
+from app.preprocess.image import extract_content
+from app.preprocess.video import transcribe
 from app.services.graph import run_review
 
 app = FastAPI(
@@ -59,6 +62,43 @@ def get_review(review_id: int) -> ReviewRecord:
     if not rec:
         raise HTTPException(status_code=404, detail="심의 건을 찾을 수 없습니다")
     return rec
+
+
+# --- 멀티모달 (이미지·영상) ---
+
+def _build_timeline(segments, rule_hits) -> list[TimelineSegment]:
+    """자막 구간에 위반 문구(룰 탐지어)를 매핑하여 타임라인 생성"""
+    terms = [h.term for h in rule_hits]
+    out = []
+    for s in segments:
+        hit = [t for t in terms if t in s.text]
+        out.append(TimelineSegment(start=s.start, end=s.end, text=s.text, flagged=bool(hit), terms=hit))
+    return out
+
+
+@app.post("/reviews/image", response_model=ReviewRecord)
+async def create_review_image(file: UploadFile = File(...)) -> ReviewRecord:
+    """이미지 업로드 → Vision 텍스트 추출 → AI 심의 → 대기 저장"""
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="이미지 파일이 비어 있습니다")
+    text = extract_content(data)
+    return store.create_review(text, media="이미지")
+
+
+@app.post("/reviews/video", response_model=ReviewRecord)
+async def create_review_video(file: UploadFile = File(...)) -> ReviewRecord:
+    """영상 업로드 → Whisper 자막 추출 → AI 심의 → 타임라인 매핑 → 대기 저장"""
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="영상 파일이 비어 있습니다")
+    segments = transcribe(data, filename=file.filename or "upload.mp4")
+    transcript = "\n".join(s.text for s in segments).strip()
+    if not transcript:
+        raise HTTPException(status_code=422, detail="영상에서 자막을 추출하지 못했습니다")
+    result = run_review(transcript, media="영상")
+    result.timeline = _build_timeline(segments, result.rule_hits)
+    return store.create_with_result(transcript, "영상", result)
 
 
 @app.post("/reviews/{review_id}/decision", response_model=ReviewRecord)

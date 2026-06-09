@@ -8,7 +8,6 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_embed_model: str = "text-embedding-3-small"
     openai_chat_model: str = "gpt-4o-mini"
-    cohere_api_key: str = ""
 
     data_path: str = "data/regulations.jsonl"
     vectorstore_dir: str = "vectorstore"

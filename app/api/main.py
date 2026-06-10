@@ -122,11 +122,12 @@ async def create_review_video(file: UploadFile = File(...), title: str = Form(""
         segments = []
     transcript = "\n".join(s.text for s in segments).strip()
 
-    # 화면 프레임 → 프레임별 Vision 시각 위반 분석 (병렬)
+    # 화면 프레임 → 프레임별 Vision 시각 위반 분석
+    # 동시성을 낮춰 순간 토큰 사용량(TPM) 스파이크를 방지
     frames = extract_frames(data, filename=fname)
     frame_data: list[tuple[float, str, list]] = []  # (시각, 화면 문구, 시각 위반 목록)
     if frames:
-        with ThreadPoolExecutor(max_workers=4) as ex:
+        with ThreadPoolExecutor(max_workers=2) as ex:
             futs = {ex.submit(analyze_frame, jpg): t for t, jpg in frames}
             for fut in as_completed(futs):
                 try:

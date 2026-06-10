@@ -54,7 +54,7 @@ def extract_content(image_bytes: bytes) -> str:
     Returns:
         심의 엔진에 입력 가능한 텍스트 (문구 + 시각 구성 설명)
     """
-    client = OpenAI(api_key=settings.openai_api_key)
+    client = OpenAI(api_key=settings.openai_api_key, max_retries=6)
     b64 = base64.b64encode(image_bytes).decode()
     data_uri = f"data:{_mime(image_bytes)};base64,{b64}"
 
@@ -95,7 +95,8 @@ def analyze_frame(image_bytes: bytes) -> dict:
     Returns:
         {"text": 화면 문구, "findings": [{"category","severity","detail"}, ...]}
     """
-    client = OpenAI(api_key=settings.openai_api_key)
+    # 프레임 실패는 드롭되므로 재시도를 낮게 두어 토큰 폭주를 방지
+    client = OpenAI(api_key=settings.openai_api_key, max_retries=2)
     b64 = base64.b64encode(image_bytes).decode()
     data_uri = f"data:{_mime(image_bytes)};base64,{b64}"
 
@@ -118,4 +119,8 @@ def analyze_frame(image_bytes: bytes) -> dict:
     except (json.JSONDecodeError, TypeError):
         return {"text": "", "findings": []}
     findings = [f for f in data.get("findings", []) if isinstance(f, dict) and f.get("category")]
-    return {"text": str(data.get("text", "")).strip(), "findings": findings}
+    text = str(data.get("text", "")).strip()
+    # 모델이 JSON 스키마 설명문을 화면 문구로 잘못 반환하는 경우 제거
+    if "화면에 보이는 모든 문구" in text:
+        text = ""
+    return {"text": text, "findings": findings}

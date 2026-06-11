@@ -909,23 +909,6 @@ def new_review():
             unsafe_allow_html=True)
         left, right = st.columns([1, 1], gap="medium")
 
-    else:  # 영상
-        # 업로드 진행 중이면 폼 대신 로딩 화면만 표시
-        if st.session_state.get("_video_uploading"):
-            st.markdown("""
-<div style="text-align:center;padding:60px 0;">
-  <div class="lb-pulse" style="display:inline-block;width:10px;height:10px;border-radius:999px;
-    background:#34d399;margin-right:10px;vertical-align:middle;"></div>
-  <span style="font-size:15px;font-weight:700;color:#52617a;vertical-align:middle;">
-    영상을 업로드하고 있습니다…
-  </span>
-</div>""", unsafe_allow_html=True)
-            up_data = st.session_state.pop("_video_upload_data")
-            rec = api_create_video(up_data["file"], up_data["title"], up_data.get("review_mode", "표준"))
-            st.session_state.pop("_video_uploading", None)
-            go("detail", rec["id"])
-            return
-
         with left:
             st.markdown('<label class="nr-field-label">제목</label>',
                         unsafe_allow_html=True)

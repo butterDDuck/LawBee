@@ -502,17 +502,38 @@ def new_review():
             go("detail", rec["id"])
 
     else:  # 영상
+        # 업로드 진행 중이면 폼 대신 로딩 화면만 표시
+        if st.session_state.get("_video_uploading"):
+            st.markdown("""
+<div style="text-align:center;padding:60px 0;">
+  <div class="lb-pulse" style="display:inline-block;width:10px;height:10px;border-radius:999px;
+    background:#34d399;margin-right:10px;vertical-align:middle;"></div>
+  <span style="font-size:15px;font-weight:700;color:#52617a;vertical-align:middle;">
+    영상을 업로드하고 있습니다…
+  </span>
+</div>""", unsafe_allow_html=True)
+            up_data = st.session_state.pop("_video_upload_data")
+            rec = api_create_video(up_data["file"], up_data["title"])
+            st.session_state.pop("_video_uploading", None)
+            go("detail", rec["id"])
+            return
+
         with left:
             up = st.file_uploader("영상 첨부", type=["mp4", "mov", "webm", "m4a", "mp3", "wav"])
             if up:
                 st.video(up)
         with right:
             _ai_guide("영상의 음성·화면을 분석해 구간별로 심의하고, 위반을 타임라인에 표시합니다.")
-        st.write("")
-        if st.button("AI 심의 요청", type="primary", disabled=(up is None or not title.strip())):
-            with st.spinner("업로드 중…"):
-                rec = api_create_video((up.name, up.getvalue(), up.type), title.strip())
-            go("detail", rec["id"])
+            st.write("")
+            st.markdown('<style>[class*="st-key-video-submit"] button{padding:14px 0 !important;font-size:15px !important;}</style>', unsafe_allow_html=True)
+            if st.button("AI 심의 요청", type="primary", use_container_width=True,
+                         key="video-submit", disabled=(up is None or not title.strip())):
+                st.session_state["_video_uploading"] = True
+                st.session_state["_video_upload_data"] = {
+                    "file": (up.name, up.getvalue(), up.type),
+                    "title": title.strip(),
+                }
+                st.rerun()
 
 
 # --- 화면: 검수·결재 상세 ---
@@ -650,15 +671,75 @@ def detail(rid):
         st.markdown('<div style="font-size:14.5px;font-weight:800;color:#0f1b2d;margin-bottom:10px;">영상 미리보기 · 실시간 위반 감지</div>', unsafe_allow_html=True)
         timeline = [] if is_processing else (ai.get("timeline") or [])
         _video_review(rec["id"], timeline, is_processing=is_processing)
-        if is_processing:
-            _time.sleep(3)
-            st.rerun()
-            return
 
     left, right = st.columns([1.15, 0.85])
 
     # 좌 — AI 심의 결과 + 발견 항목 + AI 수정 제안 + 원본 미리보기
     with left:
+        if is_processing:
+            st.markdown("""
+<style>
+@keyframes lb-shimmer2{0%{background-position:-600px 0}100%{background-position:600px 0}}
+.lb-sk{background:linear-gradient(90deg,#f1f5f9 25%,#e2e8f0 50%,#f1f5f9 75%);background-size:1200px 100%;
+  animation:lb-shimmer2 1.5s infinite linear;border-radius:6px;}
+</style>
+<div style="background:#fff;border:1px solid #e6eaf1;border-radius:14px;padding:16px 18px;box-shadow:0 1px 2px rgba(16,24,40,.04);">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+    <div style="width:34px;height:34px;border-radius:9px;background:linear-gradient(145deg,#3b82f6,#1d4ed8);display:grid;place-items:center;font-size:12px;font-weight:800;color:#fff;">AI</div>
+    <div style="flex:1;">
+      <div class="lb-sk" style="height:16px;width:55%;margin-bottom:8px;"></div>
+      <div class="lb-sk" style="height:12px;width:75%;"></div>
+    </div>
+    <div class="lb-sk" style="width:50px;height:50px;border-radius:999px;"></div>
+  </div>
+  <div style="display:flex;gap:8px;">
+    <div class="lb-sk" style="flex:1;height:52px;border-radius:10px;"></div>
+    <div class="lb-sk" style="flex:1;height:52px;border-radius:10px;"></div>
+    <div class="lb-sk" style="flex:1;height:52px;border-radius:10px;"></div>
+  </div>
+</div>
+<div style="font-size:13px;font-weight:800;color:#0f1b2d;margin:16px 0 8px;">발견 항목</div>
+<div style="display:flex;flex-direction:column;gap:10px;">
+  <div style="background:#fff;border:1px solid #e6eaf1;border-radius:12px;padding:13px 15px;">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+      <div class="lb-sk" style="width:6px;height:6px;border-radius:999px;flex-shrink:0;"></div>
+      <div class="lb-sk" style="width:52px;height:20px;border-radius:999px;"></div>
+      <div class="lb-sk" style="width:90px;height:16px;margin-left:4px;"></div>
+    </div>
+    <div class="lb-sk" style="height:36px;border-radius:8px;margin-bottom:8px;"></div>
+    <div class="lb-sk" style="height:13px;width:80%;margin-bottom:6px;"></div>
+    <div class="lb-sk" style="height:13px;width:65%;"></div>
+  </div>
+  <div style="background:#fff;border:1px solid #e6eaf1;border-radius:12px;padding:13px 15px;">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+      <div class="lb-sk" style="width:6px;height:6px;border-radius:999px;flex-shrink:0;"></div>
+      <div class="lb-sk" style="width:52px;height:20px;border-radius:999px;"></div>
+      <div class="lb-sk" style="width:75px;height:16px;margin-left:4px;"></div>
+    </div>
+    <div class="lb-sk" style="height:13px;width:70%;margin-bottom:6px;"></div>
+    <div class="lb-sk" style="height:13px;width:55%;"></div>
+  </div>
+</div>
+<div style="background:#f0f6ff;border:1px solid #d4e3fb;border-radius:14px;padding:18px 20px;margin-top:14px;">
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
+    <div style="width:24px;height:24px;border-radius:7px;background:linear-gradient(145deg,#3b82f6,#1d4ed8);display:grid;place-items:center;font-size:9px;font-weight:800;color:#fff;">AI</div>
+    <div class="lb-sk" style="width:90px;height:14px;"></div>
+    <div class="lb-sk" style="width:140px;height:12px;margin-left:4px;"></div>
+  </div>
+  <div style="background:#fff;border:1px solid #d4e3fb;border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:8px;">
+    <div class="lb-sk" style="height:13px;width:90%;"></div>
+    <div class="lb-sk" style="height:13px;width:75%;"></div>
+    <div class="lb-sk" style="height:13px;width:82%;"></div>
+  </div>
+</div>
+<div style="margin-top:14px;text-align:center;font-size:12px;color:#94a3b8;font-weight:600;padding:12px 0;">
+  <span class="lb-pulse" style="display:inline-block;width:7px;height:7px;border-radius:999px;background:#34d399;margin-right:7px;vertical-align:middle;"></span>음성·화면 분석 및 AI 준법 심의를 진행하고 있습니다
+</div>
+""", unsafe_allow_html=True)
+            _time.sleep(3)
+            st.rerun()
+            return
+
         # AI 1차 심의 결과 카드
         passed = max(0, 6 - high - mid)
         count_chips = "".join(
@@ -746,7 +827,22 @@ def detail(rid):
 
     # 우 — 메타 정보 + 준법관리자 결재
     with right:
-        decision_panel(rec, high)
+        if is_processing:
+            st.markdown("""
+<div style="background:#fff;border:1px solid #e6eaf1;border-radius:14px;padding:20px;opacity:.55;">
+  <div style="font-size:15px;font-weight:800;color:#0f1b2d;margin-bottom:12px;">준법관리자 결재</div>
+  <div style="font-size:12px;color:#94a3b8;margin-bottom:14px;">AI 심의가 완료된 후 결재가 가능합니다.</div>
+  <div style="display:flex;gap:8px;margin-bottom:16px;">
+    <div class="lb-sk" style="flex:1;height:60px;border-radius:10px;"></div>
+    <div class="lb-sk" style="flex:1;height:60px;border-radius:10px;"></div>
+    <div class="lb-sk" style="flex:1;height:60px;border-radius:10px;"></div>
+  </div>
+  <div class="lb-sk" style="height:80px;border-radius:10px;margin-bottom:14px;"></div>
+  <div class="lb-sk" style="height:44px;border-radius:9px;"></div>
+</div>
+""", unsafe_allow_html=True)
+        else:
+            decision_panel(rec, high)
         st.markdown(
             '<div class="lb-anim" style="background:#fff;border:1px solid #e6eaf1;border-radius:12px;padding:4px 18px;margin-top:16px;">'
             + "".join(

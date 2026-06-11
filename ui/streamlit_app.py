@@ -34,6 +34,7 @@ DSTATUS = {
     "승인": ("승인 완료", "green"),
     "조건부승인": ("조건부 승인", "amber"),
     "반려": ("반려", "red"),
+    "처리중": ("분석 중", "slate"),
 }
 DECISIONS = [("승인", "원안 그대로 게재", "green"),
              ("조건부승인", "수정 후 게재 허용", "amber"),
@@ -420,12 +421,14 @@ def dashboard():
 
         for r in rows:
             ai = r["ai_result"]
-            high, mid = counts_of(build_findings(ai))
-            vlabel, vtone = VERDICT[ai["status"]]
+            is_processing = r["decision_status"] == "처리중"
+            high, mid = (0, 0) if is_processing else counts_of(build_findings(ai))
+            vlabel, vtone = ("분석 중", "slate") if is_processing else VERDICT[ai["status"]]
             slabel, stone = DSTATUS[r["decision_status"]]
-            score = ai_score(ai)
-            fb = (badge(f"위반 {high}", "red", sm=True) + " " if high else "") + (badge(f"주의 {mid}", "amber", sm=True) if mid else "")
-            if not high and not mid:
+            score = 0 if is_processing else ai_score(ai)
+            fb = badge("분석 중…", "slate", sm=True) if is_processing else (
+                (badge(f"위반 {high}", "red", sm=True) + " " if high else "") + (badge(f"주의 {mid}", "amber", sm=True) if mid else ""))
+            if not is_processing and not high and not mid:
                 fb = badge("이슈 없음", "green", sm=True)
             trail = ('<span style="font-size:12px;font-weight:700;color:#2563eb;">결재 ›</span>'
                      if r["decision_status"] == "대기"
@@ -507,7 +510,7 @@ def new_review():
             _ai_guide("영상의 음성·화면을 분석해 구간별로 심의하고, 위반을 타임라인에 표시합니다.")
         st.write("")
         if st.button("AI 심의 요청", type="primary", disabled=(up is None or not title.strip())):
-            with st.spinner("음성·화면 분석 + 심의 중… (영상 길이에 따라 시간이 걸립니다)"):
+            with st.spinner("업로드 중…"):
                 rec = api_create_video((up.name, up.getvalue(), up.type), title.strip())
             go("detail", rec["id"])
 
@@ -515,81 +518,214 @@ def new_review():
 # --- 화면: 검수·결재 상세 ---
 
 _VIDEO_TPL = """
+<style>
+@keyframes lb-fadein {
+  from { opacity:0; transform:translateY(6px); }
+  to   { opacity:1; transform:translateY(0); }
+}
+.lb-seg { animation: lb-fadein .35s ease both; }
+</style>
 <div style="display:grid;grid-template-columns:1fr 340px;gap:14px;font-family:-apple-system,'Apple SD Gothic Neo',sans-serif;">
   <video id="vid" src="__URL__" controls style="width:100%;border-radius:12px;background:#000;max-height:420px;"></video>
   <div style="display:flex;flex-direction:column;border:1px solid #e6eaf1;border-radius:12px;background:#fff;overflow:hidden;height:420px;">
-    <div style="padding:10px 12px;border-bottom:1px solid #eef1f6;font-size:12px;font-weight:700;color:#0f1b2d;">
-      <span style="display:inline-block;width:7px;height:7px;border-radius:9px;background:#34d399;margin-right:6px;"></span>실시간 위반 감지
+    <div style="padding:10px 12px;border-bottom:1px solid #eef1f6;font-size:12px;font-weight:700;color:#0f1b2d;display:flex;align-items:center;gap:6px;">
+      <span style="width:7px;height:7px;border-radius:9px;background:#34d399;display:inline-block;"></span>실시간 위반 감지
+      <span id="feed-hint" style="margin-left:auto;font-size:11px;color:#94a3b8;font-weight:500;">▶ 재생 시 구간별 분석 결과가 표시됩니다</span>
     </div>
-    <div id="segs" style="flex:1;overflow:auto;padding:8px 10px;"></div>
+    <div id="segs" style="flex:1;overflow:auto;padding:8px 10px;">__FEED_INIT__</div>
   </div>
 </div>
 <script>
 const SEGS = __SEGS__;
 const vid = document.getElementById('vid');
 const wrap = document.getElementById('segs');
+const hint = document.getElementById('feed-hint');
+var shown = new Array(SEGS.length).fill(false);
+
 function mmss(t){var m=Math.floor(t/60),s=Math.floor(t%60);return (''+m).padStart(2,'0')+':'+(''+s).padStart(2,'0');}
-SEGS.forEach(function(s,i){
-  var d=document.createElement('div'); d.id='seg'+i;
-  d.style.cssText='padding:7px 9px;border-radius:7px;margin-bottom:5px;font-size:12.5px;line-height:1.5;transition:all .2s;border:1px solid transparent;color:#52617a;cursor:pointer;';
-  var terms = s.flagged ? s.terms.map(function(t){return '<span style="background:#fdecea;color:#c0322b;border:1px solid #f6cfc9;border-radius:999px;padding:1px 7px;font-size:11px;font-weight:700;margin-left:4px;">'+t+'</span>';}).join('') : '';
+
+function makeEl(s, i) {
+  var d = document.createElement('div');
+  d.id = 'seg'+i;
+  d.className = 'lb-seg';
+  var baseCss = 'padding:7px 9px;border-radius:7px;margin-bottom:5px;font-size:12.5px;line-height:1.5;border:1px solid transparent;cursor:pointer;transition:background .2s,border-color .2s,color .2s;';
+  d.style.cssText = baseCss + (s.flagged ? 'background:#fdecea;border-color:#f6cfc9;color:#7a2a25;' : 'background:#eef4ff;border-color:#c9d8fb;color:#1d4ed8;');
+  var terms = s.flagged
+    ? s.terms.map(function(t){ return '<span style="background:#fdecea;color:#c0322b;border:1px solid #f6cfc9;border-radius:999px;padding:1px 7px;font-size:11px;font-weight:700;margin-left:4px;">'+t+'</span>'; }).join('')
+    : '';
   var k = s.kind==='화면' ? 'background:#f0eafc;color:#6d28d9;' : 'background:#eef2f8;color:#64748b;';
   var kindTag = '<span style="font-size:10px;font-weight:700;border-radius:4px;padding:1px 5px;margin-right:5px;'+k+'">'+s.kind+'</span>';
-  d.innerHTML='<span style="font-family:monospace;color:#2563eb;font-weight:700;">'+mmss(s.start)+'</span> '+kindTag+s.text+terms;
-  d.onclick=function(){ vid.currentTime=s.start; vid.play(); };
-  d.title='클릭하면 이 시점으로 이동';
-  wrap.appendChild(d);
-});
-vid.addEventListener('timeupdate', function(){
-  var t=vid.currentTime;
-  SEGS.forEach(function(s,i){
-    var el=document.getElementById('seg'+i);
-    var active = t>=s.start && t<s.end;
-    if(active){
+  d.innerHTML = '<span style="font-family:monospace;color:#2563eb;font-weight:700;">'+mmss(s.start)+'</span> '+kindTag+s.text+terms;
+  d.onclick = function(){ vid.currentTime = s.start; vid.play(); };
+  d.title = '클릭하면 이 시점으로 이동';
+  return d;
+}
+
+/* 현재 재생 시각 기준으로 등장해야 할 항목을 추가 */
+function syncFeed(t) {
+  var appeared = false;
+  SEGS.forEach(function(s, i) {
+    if (!shown[i] && t >= s.start) {
+      var el = makeEl(s, i);
+      wrap.appendChild(el);
+      el.scrollIntoView({behavior:'smooth', block:'nearest'});
+      shown[i] = true;
+      appeared = true;
+    }
+    /* 현재 구간 하이라이트 */
+    var el = document.getElementById('seg'+i);
+    if (!el) return;
+    var active = t >= s.start && t < s.end;
+    if (active) {
+      el.style.background = s.flagged ? '#fbc6c3' : '#dbeafe';
+      el.style.borderColor = s.flagged ? '#e87d77' : '#93c5fd';
+    } else {
       el.style.background = s.flagged ? '#fdecea' : '#eef4ff';
       el.style.borderColor = s.flagged ? '#f6cfc9' : '#c9d8fb';
-      el.style.color = s.flagged ? '#7a2a25' : '#1d4ed8';
-      el.scrollIntoView({behavior:'smooth',block:'nearest'});
-    } else { el.style.background='transparent'; el.style.borderColor='transparent'; el.style.color='#52617a'; }
+    }
   });
-});
+  if (appeared && hint) hint.style.display = 'none';
+}
+
+/* seek 시 이미 지난 구간은 즉시 모두 표시 */
+vid.addEventListener('seeked', function(){ syncFeed(vid.currentTime); });
+vid.addEventListener('timeupdate', function(){ syncFeed(vid.currentTime); });
 </script>
 """
 
 
-def _video_review(rid, timeline):
+_SKELETON_HTML = """
+<style>
+@keyframes lb-shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+.lb-skel {
+  background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+  background-size: 800px 100%;
+  animation: lb-shimmer 1.4s infinite linear;
+  border-radius: 6px;
+}
+</style>
+<div style="display:flex;flex-direction:column;gap:8px;padding:10px;">
+  <div class="lb-skel" style="height:14px;width:55%;"></div>
+  <div class="lb-skel" style="height:14px;width:80%;margin-top:4px;"></div>
+  <div class="lb-skel" style="height:14px;width:65%;margin-top:10px;"></div>
+  <div class="lb-skel" style="height:14px;width:75%;margin-top:4px;"></div>
+  <div class="lb-skel" style="height:14px;width:50%;margin-top:10px;"></div>
+  <div class="lb-skel" style="height:14px;width:70%;margin-top:4px;"></div>
+  <div style="margin-top:14px;font-size:11.5px;color:#94a3b8;text-align:center;">음성·화면 분석 및 AI 준법 심의를 진행하고 있습니다.</div>
+</div>
+"""
+
+
+def _video_review(rid, timeline, is_processing=False):
     """영상 재생 + 재생 시각 동기화 실시간 위반 피드 (클라이언트 사이드)"""
     segs = json.dumps(
         [{"start": s["start"], "end": s["end"], "text": s["text"], "flagged": s["flagged"],
           "terms": s["terms"], "kind": s.get("kind", "음성")}
          for s in timeline], ensure_ascii=False)
-    out = _VIDEO_TPL.replace("__URL__", f"{API}/reviews/{rid}/media").replace("__SEGS__", segs)
+    feed_content = _SKELETON_HTML if is_processing else ""
+    out = (_VIDEO_TPL
+           .replace("__URL__", f"{API}/reviews/{rid}/media")
+           .replace("__SEGS__", segs)
+           .replace("__FEED_INIT__", feed_content))
     components.html(out, height=440)
 
 
 def detail(rid):
+    import time as _time
     rec = api_get(rid)
+    is_processing = rec.get("decision_status") == "처리중"
     ai = rec["ai_result"]
-    findings = build_findings(ai)
+    findings = [] if is_processing else build_findings(ai)
     high, mid = counts_of(findings)
-    vlabel, vtone = VERDICT[ai["status"]]
+    vlabel, vtone = ("분석 중", "slate") if is_processing else VERDICT[ai["status"]]
 
-    topbar(f"준법심의 · RV-{rec['id']:04d}", title_of(rec), badge(vlabel, vtone, dot=True))
+    right_badge = (live_dot("AI 분석 중…") if is_processing else badge(vlabel, vtone, dot=True))
+    topbar(f"준법심의 · RV-{rec['id']:04d}", title_of(rec), right_badge)
 
     media = rec["media"]
-    if media == "영상" and ai.get("timeline"):
+    if media == "영상":
         st.markdown('<div style="font-size:14.5px;font-weight:800;color:#0f1b2d;margin-bottom:10px;">영상 미리보기 · 실시간 위반 감지</div>', unsafe_allow_html=True)
-        _video_review(rec["id"], ai["timeline"])
-        st.write("")
+        timeline = [] if is_processing else (ai.get("timeline") or [])
+        _video_review(rec["id"], timeline, is_processing=is_processing)
+        if is_processing:
+            _time.sleep(3)
+            st.rerun()
+            return
 
-    left, right = st.columns([1.05, 0.95])
+    left, right = st.columns([1.15, 0.85])
 
-    # 좌 — 원본 미리보기
+    # 좌 — AI 심의 결과 + 발견 항목 + AI 수정 제안 + 원본 미리보기
     with left:
+        # AI 1차 심의 결과 카드
+        passed = max(0, 6 - high - mid)
+        count_chips = "".join(
+            f'<div style="flex:1;padding:9px 12px;border-radius:10px;background:{TONE[t]["bg"]};border:1px solid {TONE[t]["bd"]};">'
+            f'<span style="font-size:19px;font-weight:850;color:{TONE[t]["fg"]};">{n}</span>'
+            f'<span style="font-size:12px;font-weight:700;color:{TONE[t]["fg"]};opacity:.85;margin-left:6px;">{lab}</span></div>'
+            for n, lab, t in [(high, "위반", "red"), (mid, "주의", "amber"), (passed, "통과", "green")])
+        st.markdown(
+            '<div class="lb-anim" style="background:#fff;border:1px solid #e6eaf1;border-radius:14px;padding:16px 18px;box-shadow:0 1px 2px rgba(16,24,40,.04);">'
+            '<div style="display:flex;align-items:center;gap:12px;">'
+            '<div style="width:34px;height:34px;border-radius:9px;background:linear-gradient(145deg,#3b82f6,#1d4ed8);display:grid;place-items:center;font-size:12px;font-weight:800;color:#fff;box-shadow:0 3px 10px rgba(37,99,235,.35);">AI</div>'
+            f'<div style="flex:1;"><span style="font-size:15.5px;font-weight:800;color:#0f1b2d;">AI 1차 심의 결과</span> &nbsp;{badge(vlabel, vtone)}'
+            f'<div style="font-size:12px;color:#8593a8;margin-top:2px;">규정셋 v4.2 · {html.escape(ai["summary"][:80])}{"…" if len(ai["summary"]) > 80 else ""}</div></div>'
+            f'{score_ring(ai_score(ai), 50, 5)}</div>'
+            f'<div style="display:flex;gap:8px;margin-top:14px;">{count_chips}</div></div>',
+            unsafe_allow_html=True)
+
+        # 발견 항목
+        st.markdown('<div style="font-size:13px;font-weight:800;color:#0f1b2d;margin:16px 0 8px;">발견 항목</div>', unsafe_allow_html=True)
+        if not findings:
+            st.markdown('<div class="lb-anim" style="background:#f3faf5;border:1px solid #d6efe0;border-radius:12px;padding:12px 14px;color:#15803d;font-weight:650;">'
+                        + dot_span("green") + ' &nbsp;모든 심의 항목 이상 없음</div>', unsafe_allow_html=True)
+        for i, f in enumerate(findings):
+            sv = ("위반", "red") if f["sev"] == "high" else ("주의", "amber")
+            phrases_html = ""
+            if f["phrases"]:
+                chips_str = "  ".join(
+                    f'<span style="color:#b0bacb;">"</span>{html.escape(p)}<span style="color:#b0bacb;">"</span>'
+                    for p in f["phrases"])
+                phrases_html = (f'<div style="font-size:13.5px;color:#27364e;font-weight:600;background:#f6f8fc;'
+                                f'border:1px solid #e8ecf3;border-radius:8px;padding:8px 12px;margin:9px 0;">{chips_str}</div>')
+            st.markdown(
+                f'<div class="lb-anim lb-finding" style="border:1px solid #e8ecf3;border-radius:12px;'
+                f'padding:13px 15px;margin-bottom:10px;background:#fff;animation-delay:{i * 0.12:.2f}s;animation-fill-mode:both;">'
+                f'<div style="display:flex;align-items:center;gap:9px;">{dot_span(sv[1], 6)}{badge(sv[0], sv[1])}'
+                f'<span style="font-size:13px;font-weight:750;color:#0f1b2d;">{html.escape(f["cat"])}</span></div>'
+                f'{phrases_html}'
+                f'<div style="font-size:12.8px;color:#3a4a63;line-height:1.6;margin-top:6px;"><b style="color:#8593a8;">문제점</b> · {html.escape(f["issue"])}</div>'
+                f'<div style="font-size:12.5px;color:#3a4a63;margin-top:5px;"><b style="color:#8593a8;">근거 규정</b> · '
+                f'<span style="font-family:ui-monospace,monospace;">{html.escape(f["rule"])}</span></div></div>',
+                unsafe_allow_html=True)
+
+        # AI 수정 제안 — 내부 레이블([음성 자막], [화면 분석], N초:) 제거 후 표시
+        if ai.get("alternative_text"):
+            import re as _re
+            cleaned = _re.sub(r'\[(음성 자막|화면 분석)\]\s*', '', ai["alternative_text"])
+            cleaned = _re.sub(r'\d+초:\s*', '', cleaned)
+            paras = [p.strip() for p in cleaned.split("\n") if p.strip()]
+            paras_html = "".join(
+                f'<p style="margin:0 0 10px;font-size:13.5px;color:#27364e;line-height:1.75;word-break:keep-all;">{html.escape(p)}</p>'
+                for p in paras)
+            st.markdown(
+                '<div class="lb-anim" style="background:#f0f6ff;border:1px solid #d4e3fb;border-radius:14px;padding:18px 20px;margin-top:4px;">'
+                '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">'
+                '<div style="width:24px;height:24px;border-radius:7px;background:linear-gradient(145deg,#3b82f6,#1d4ed8);display:grid;place-items:center;font-size:9px;font-weight:800;color:#fff;">AI</div>'
+                '<span style="font-size:13.5px;font-weight:800;color:#1d4ed8;">AI 수정 제안</span>'
+                '<span style="font-size:11px;color:#93b4f0;margin-left:4px;">준법 기준에 맞게 수정한 대안 문구입니다</span></div>'
+                f'<div style="background:#fff;border:1px solid #d4e3fb;border-radius:10px;padding:14px 16px;">{paras_html}</div>'
+                '</div>',
+                unsafe_allow_html=True)
+
+        # 원본 미리보기
+        st.markdown('<div style="height:10px;"></div>', unsafe_allow_html=True)
         head = "추출 자막" if media == "영상" else "콘텐츠 미리보기"
         st.markdown(
-            f'<div style="display:flex;align-items:center;gap:9px;margin-bottom:12px;">'
-            f'<span style="font-size:14.5px;font-weight:800;color:#0f1b2d;">{head}</span>'
+            f'<div style="display:flex;align-items:center;gap:9px;margin-bottom:10px;">'
+            f'<span style="font-size:13.5px;font-weight:800;color:#0f1b2d;">{head}</span>'
             f'<span style="margin-left:auto;">{badge(f"위반 {high}", "red")} &nbsp;{badge(f"주의 {mid}", "amber")}</span></div>',
             unsafe_allow_html=True)
         if media == "이미지":
@@ -607,70 +743,19 @@ def detail(rid):
                 '<div style="font-size:11px;font-weight:700;color:#94a3b8;letter-spacing:.05em;margin-bottom:10px;">본문 카피 · 위반 문구 하이라이트</div>'
                 f'<p style="margin:0;font-size:16px;line-height:1.95;color:#27364e;word-break:keep-all;">{highlight(rec["content"], ai["rule_hits"])}</p>'
                 '</div>', unsafe_allow_html=True)
+
+    # 우 — 메타 정보 + 준법관리자 결재
+    with right:
+        decision_panel(rec, high)
         st.markdown(
-            '<div class="lb-anim" style="margin-top:18px;background:#fff;border:1px solid #e6eaf1;border-radius:12px;padding:4px 18px;">'
+            '<div class="lb-anim" style="background:#fff;border:1px solid #e6eaf1;border-radius:12px;padding:4px 18px;margin-top:16px;">'
             + "".join(
                 f'<div style="display:flex;padding:11px 0;border-bottom:{"none" if i==2 else "1px solid #f1f3f8"};">'
-                f'<div style="width:104px;font-size:12.5px;color:#94a3b8;font-weight:600;">{k}</div>'
+                f'<div style="width:90px;font-size:12.5px;color:#94a3b8;font-weight:600;">{k}</div>'
                 f'<div style="font-size:13px;color:#27364e;font-weight:600;">{html.escape(str(v))}</div></div>'
                 for i, (k, v) in enumerate([("매체", rec["media"] or "-"), ("요청 일시", rec["created_at"].replace("T", " ")),
                                             ("적용 규정셋", "금융상품 광고 규정 v4.2")]))
             + "</div>", unsafe_allow_html=True)
-
-    # 우 — AI 결과 + 결재
-    with right:
-        passed = max(0, 6 - high - mid)
-        chips = "".join(
-            f'<div style="flex:1;padding:9px 12px;border-radius:10px;background:{TONE[t]["bg"]};border:1px solid {TONE[t]["bd"]};">'
-            f'<span style="font-size:19px;font-weight:850;color:{TONE[t]["fg"]};">{n}</span>'
-            f'<span style="font-size:12px;font-weight:700;color:{TONE[t]["fg"]};opacity:.85;margin-left:6px;">{lab}</span></div>'
-            for n, lab, t in [(high, "위반", "red"), (mid, "주의", "amber"), (passed, "통과", "green")])
-        st.markdown(
-            '<div class="lb-anim" style="background:#fff;border:1px solid #e6eaf1;border-radius:14px;padding:16px 18px;box-shadow:0 1px 2px rgba(16,24,40,.04);">'
-            '<div style="display:flex;align-items:center;gap:12px;">'
-            '<div style="width:34px;height:34px;border-radius:9px;background:linear-gradient(145deg,#3b82f6,#1d4ed8);display:grid;place-items:center;font-size:12px;font-weight:800;color:#fff;box-shadow:0 3px 10px rgba(37,99,235,.35);">AI</div>'
-            f'<div style="flex:1;"><span style="font-size:15.5px;font-weight:800;color:#0f1b2d;">AI 1차 심의 결과</span> &nbsp;{badge(vlabel, vtone)}'
-            f'<div style="font-size:12px;color:#8593a8;margin-top:2px;">규정셋 v4.2 · {html.escape(ai["summary"][:64])}…</div></div>'
-            f'{score_ring(ai_score(ai), 50, 5)}</div>'
-            f'<div style="display:flex;gap:8px;margin-top:14px;">{chips}</div></div>',
-            unsafe_allow_html=True)
-
-        st.markdown('<div style="font-size:13px;font-weight:800;color:#0f1b2d;margin:16px 0 8px;">발견 항목</div>', unsafe_allow_html=True)
-        if not findings:
-            st.markdown('<div class="lb-anim" style="background:#f3faf5;border:1px solid #d6efe0;border-radius:12px;padding:12px 14px;color:#15803d;font-weight:650;">'
-                        + dot_span("green") + ' &nbsp;모든 심의 항목 이상 없음</div>', unsafe_allow_html=True)
-        for i, f in enumerate(findings):
-            sv = ("위반", "red") if f["sev"] == "high" else ("주의", "amber")
-            phrases_html = ""
-            if f["phrases"]:
-                chips = "  ".join(
-                    f'<span style="color:#b0bacb;">“</span> {html.escape(p)} <span style="color:#b0bacb;">”</span>'
-                    for p in f["phrases"])
-                phrases_html = (f'<div style="font-size:13.5px;color:#27364e;font-weight:600;background:#f6f8fc;'
-                                f'border:1px solid #e8ecf3;border-radius:8px;padding:8px 12px;margin:9px 0;">{chips}</div>')
-            st.markdown(
-                f'<div class="lb-anim lb-finding" style="border:1px solid #e8ecf3;border-radius:12px;'
-                f'padding:13px 15px;margin-bottom:10px;background:#fff;animation-delay:{i * 0.12:.2f}s;animation-fill-mode:both;">'
-                f'<div style="display:flex;align-items:center;gap:9px;">{dot_span(sv[1], 6)}{badge(sv[0], sv[1])}'
-                f'<span style="font-size:13px;font-weight:750;color:#0f1b2d;">{html.escape(f["cat"])}</span></div>'
-                f'{phrases_html}'
-                f'<div style="font-size:12.8px;color:#3a4a63;line-height:1.6;margin-top:6px;"><b style="color:#8593a8;">문제점</b> · {html.escape(f["issue"])}</div>'
-                f'<div style="font-size:12.5px;color:#3a4a63;margin-top:5px;"><b style="color:#8593a8;">근거 규정</b> · '
-                f'<span style="font-family:ui-monospace,monospace;">{html.escape(f["rule"])}</span></div></div>',
-                unsafe_allow_html=True)
-
-        # AI 수정 제안 — 전체 콘텐츠에 대한 단일 대안 문구 (1회만)
-        if ai.get("alternative_text"):
-            st.markdown(
-                f'<div class="lb-anim" style="background:#f0f6ff;border:1px solid #d4e3fb;border-radius:12px;padding:13px 15px;margin-top:4px;">'
-                f'<div style="display:flex;align-items:center;gap:7px;margin-bottom:6px;">'
-                f'<div style="width:22px;height:22px;border-radius:6px;background:linear-gradient(145deg,#3b82f6,#1d4ed8);display:grid;place-items:center;font-size:9px;font-weight:800;color:#fff;">AI</div>'
-                f'<span style="font-size:13px;font-weight:800;color:#1d4ed8;">AI 수정 제안</span></div>'
-                f'<div style="font-size:13px;color:#27364e;line-height:1.65;">{html.escape(ai["alternative_text"])}</div></div>',
-                unsafe_allow_html=True)
-
-        st.write("")
-        decision_panel(rec, high)
 
 
 def decision_panel(rec, high):

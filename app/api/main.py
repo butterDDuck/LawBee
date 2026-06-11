@@ -6,7 +6,7 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
@@ -107,66 +107,98 @@ async def create_review_image(file: UploadFile = File(...), title: str = Form(""
     return rec
 
 
+def _process_video(review_id: int, data: bytes, fname: str) -> None:
+    """백그라운드 영상 분석 — Whisper 포함 전 과정 처리 후 DB 갱신"""
+    import time as _time
+    import traceback as _tb
+    try:
+        # 음성 자막 추출
+        try:
+            segments_raw = transcribe(data, filename=fname)
+        except Exception:
+            segments_raw = []
+        transcript = "\n".join(s.text for s in segments_raw).strip()
+        frames = extract_frames(data, filename=fname)
+        frame_data: list[tuple[float, str, list]] = []
+        if frames:
+            with ThreadPoolExecutor(max_workers=2) as ex:
+                futs = {ex.submit(analyze_frame, jpg): t for t, jpg in frames}
+                for fut in as_completed(futs):
+                    try:
+                        fa = fut.result()
+                        frame_data.append((futs[fut], fa["text"], fa["findings"]))
+                    except Exception:
+                        pass
+            frame_data.sort()
+
+        parts = []
+        if transcript:
+            parts.append("[음성 자막]\n" + transcript)
+        if frame_data:
+            lines = []
+            for t, txt, finds in frame_data:
+                line = f"{int(t)}초: {txt}".strip()
+                for f in finds:
+                    line += f" (시각 위반: {f.get('category')} - {f.get('detail', '')})"
+                lines.append(line)
+            parts.append("[화면 분석]\n" + "\n".join(lines))
+        combined = "\n\n".join(parts)
+
+        if not combined:
+            combined = "(내용을 추출하지 못했습니다)"
+
+        # Vision 호출 직후 TPM 소진 방지를 위해 대기 후 심의 실행
+        _time.sleep(10)
+
+        # 429 대비 재시도 (최대 3회, 지수 백오프)
+        result = None
+        for attempt in range(3):
+            try:
+                result = run_review(combined, media="영상")
+                break
+            except Exception as e:
+                if attempt < 2:
+                    _time.sleep(20 * (attempt + 1))
+                else:
+                    raise
+
+        terms = [h.term for h in result.rule_hits]
+        audio_tl = [_seg(s.start, s.end, s.text, terms, "음성") for s in segments_raw]
+        visual_tl = []
+        for t, txt, finds in frame_data:
+            cats = [f.get("category") for f in finds if f.get("category")]
+            one = " ".join(txt.split())
+            disp = (one[:64] + "…") if len(one) > 64 else (one or "(화면)")
+            visual_tl.append(TimelineSegment(start=t, end=t + 4.0, text=disp,
+                                             flagged=bool(finds), terms=cats, kind="화면"))
+        result.timeline = sorted(audio_tl + visual_tl, key=lambda x: x.start)
+
+        # content 업데이트 후 ai_result 갱신
+        with store._conn() as c:
+            c.execute("UPDATE reviews SET content = ? WHERE id = ?", (combined, review_id))
+        store.update_ai_result(review_id, result)
+    except Exception as e:
+        print(f"[ERROR] _process_video rid={review_id}: {e}")
+        _tb.print_exc()
+
+
 @app.post("/reviews/video", response_model=ReviewRecord)
-async def create_review_video(file: UploadFile = File(...), title: str = Form("")) -> ReviewRecord:
-    """영상 업로드 → 음성 자막(Whisper) + 화면 프레임(Vision) 추출 → 통합 심의 → 타임라인 저장"""
+async def create_review_video(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    title: str = Form(""),
+) -> ReviewRecord:
+    """영상 업로드 → 즉시 레코드 반환 후 백그라운드에서 전 과정 분석 진행"""
     data = await file.read()
     if not data:
         raise HTTPException(status_code=400, detail="영상 파일이 비어 있습니다")
     fname = file.filename or "upload.mp4"
 
-    # 음성 자막 (없는 영상도 허용)
-    try:
-        segments = transcribe(data, filename=fname)
-    except Exception:
-        segments = []
-    transcript = "\n".join(s.text for s in segments).strip()
+    # 처리중 레코드 즉시 생성 후 반환 — Whisper 포함 모든 분석은 백그라운드 처리
+    rec = store.create_pending("(분석 중…)", "영상", title=title or None)
+    _save_media(rec.id, data, fname)
 
-    # 화면 프레임 → 프레임별 Vision 시각 위반 분석
-    # 동시성을 낮춰 순간 토큰 사용량(TPM) 스파이크를 방지
-    frames = extract_frames(data, filename=fname)
-    frame_data: list[tuple[float, str, list]] = []  # (시각, 화면 문구, 시각 위반 목록)
-    if frames:
-        with ThreadPoolExecutor(max_workers=2) as ex:
-            futs = {ex.submit(analyze_frame, jpg): t for t, jpg in frames}
-            for fut in as_completed(futs):
-                try:
-                    fa = fut.result()
-                    frame_data.append((futs[fut], fa["text"], fa["findings"]))
-                except Exception:
-                    pass
-        frame_data.sort()
-
-    if not transcript and not frame_data:
-        raise HTTPException(status_code=422, detail="영상에서 자막·화면 내용을 추출하지 못했습니다")
-
-    parts = []
-    if transcript:
-        parts.append("[음성 자막]\n" + transcript)
-    if frame_data:
-        lines = []
-        for t, txt, finds in frame_data:
-            line = f"{int(t)}초: {txt}".strip()
-            for f in finds:
-                line += f" (시각 위반: {f.get('category')} - {f.get('detail', '')})"
-            lines.append(line)
-        parts.append("[화면 분석]\n" + "\n".join(lines))
-    combined = "\n\n".join(parts)
-
-    result = run_review(combined, media="영상")
-    terms = [h.term for h in result.rule_hits]
-    audio_tl = [_seg(s.start, s.end, s.text, terms, "음성") for s in segments]
-    visual_tl = []
-    for t, txt, finds in frame_data:
-        cats = [f.get("category") for f in finds if f.get("category")]
-        one = " ".join(txt.split())
-        disp = (one[:64] + "…") if len(one) > 64 else (one or "(화면)")
-        visual_tl.append(TimelineSegment(start=t, end=t + 4.0, text=disp,
-                                         flagged=bool(finds), terms=cats, kind="화면"))
-    result.timeline = sorted(audio_tl + visual_tl, key=lambda x: x.start)
-
-    rec = store.create_with_result(combined, "영상", result, title=title or None)
-    _save_media(rec.id, data, file.filename)
+    background_tasks.add_task(_process_video, rec.id, data, fname)
     return rec
 
 

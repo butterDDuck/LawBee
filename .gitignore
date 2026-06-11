@@ -23,6 +23,7 @@ var/
 
 # 로컬 전용 (저장소 비노출)
 CLAUDE.md
+AGENTS.md
 
 # OS
 .DS_Store

@@ -6,8 +6,8 @@ from pydantic import BaseModel, Field
 # AI 심의 판정 상태
 Status = Literal["위반", "주의", "통과"]
 
-# 준법관리자 결재 상태
-DecisionStatus = Literal["대기", "승인", "조건부승인", "반려"]
+# 준법관리자 결재 상태 ("처리중"은 영상 분석 완료 전 임시 상태)
+DecisionStatus = Literal["대기", "승인", "조건부승인", "반려", "처리중"]
 
 
 class ReviewRequest(BaseModel):

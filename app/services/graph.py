@@ -102,8 +102,13 @@ def alternative_node(state: State) -> State:
         "원문의 마케팅 의도는 살리되, 지적된 위반 사유를 모두 해소한 대안 문구를 한국어로 작성하세요. "
         "과장·단정·보편적용 표현을 제거하고 필요한 고지를 반영하세요. 대안 문구만 출력하세요."
     )
+    import re as _re
+    # 음성 자막 텍스트만 추출 — [화면 분석] 섹션 및 내부 레이블 제거
+    raw = state["content"]
+    voice = _re.search(r'\[음성 자막\](.*?)(?=\[화면 분석\]|$)', raw, _re.S)
+    clean_content = voice.group(1).strip() if voice else raw
     human = (
-        f"[원문]\n{state['content']}\n\n"
+        f"[원문]\n{clean_content}\n\n"
         f"[해소해야 할 위반 사유]\n{violation_summary or judgment.summary}"
     )
     resp = _llm().invoke([("system", system), ("human", human)])

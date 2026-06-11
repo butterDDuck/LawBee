@@ -86,6 +86,31 @@ def create_with_result(content: str, media: str, result: ReviewResult, title: st
     return get_review(review_id)
 
 
+_PENDING_RESULT = ReviewResult(status="통과", summary="__처리중__", rule_hits=[], violations=[], citations=[])
+
+
+def create_pending(content: str, media: str, title: str | None = None) -> ReviewRecord:
+    """즉시 반환용 레코드 생성 — 분석 완료 전 '처리중' 상태로 저장"""
+    init_db()
+    with _conn() as c:
+        cur = c.execute(
+            "INSERT INTO reviews (content, title, media, ai_result, decision_status, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (content, title, media, _PENDING_RESULT.model_dump_json(), "처리중", _now()),
+        )
+        review_id = cur.lastrowid
+    return get_review(review_id)
+
+
+def update_ai_result(review_id: int, result: ReviewResult) -> None:
+    """분석 완료 후 ai_result 갱신 및 decision_status를 '대기'로 전환"""
+    init_db()
+    with _conn() as c:
+        c.execute(
+            "UPDATE reviews SET ai_result = ?, decision_status = '대기' WHERE id = ?",
+            (result.model_dump_json(), review_id),
+        )
+
+
 def list_reviews(status: DecisionStatus | None = None) -> list[ReviewRecord]:
     """심의 건 목록 조회 (상태 필터 가능), 최신순"""
     init_db()

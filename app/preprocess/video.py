@@ -37,6 +37,7 @@ def transcribe(video_bytes: bytes, filename: str = "upload.mp4") -> list[Segment
     resp = client.audio.transcriptions.create(
         model=settings.openai_stt_model,
         file=buf,
+        language="ko",
         response_format="verbose_json",
         timestamp_granularities=["segment"],
     )

@@ -22,7 +22,7 @@ from app.domain.schema import (
     TimelineSegment,
 )
 from app.preprocess.image import analyze_frame, extract_content
-from app.preprocess.video import extract_frames, transcribe
+from app.preprocess.video import check_disclosure_duration, extract_frames, transcribe
 from app.services.graph import run_review
 
 app = FastAPI(
@@ -139,6 +139,10 @@ def _process_video(review_id: int, data: bytes, fname: str, review_mode: str = "
                         pass
             frame_data.sort()
 
+        # 고지띠 노출 시간 검사 — 필수 고지자막 3초 미만 탐지
+        frame_texts = [(t, txt) for t, txt, _ in frame_data]
+        disclosure_violations = check_disclosure_duration(frame_texts)
+
         parts = []
         if transcript:
             parts.append("[음성 자막]\n" + transcript)
@@ -150,6 +154,14 @@ def _process_video(review_id: int, data: bytes, fname: str, review_mode: str = "
                     line += f" (시각 위반: {f.get('category')} - {f.get('detail', '')})"
                 lines.append(line)
             parts.append("[화면 분석]\n" + "\n".join(lines))
+        if disclosure_violations:
+            dv_lines = []
+            for dv in disclosure_violations:
+                dv_lines.append(
+                    f"- \"{dv.text}\" — {dv.start}초~{dv.end}초 ({dv.duration}초 노출, "
+                    f"기준 {dv.required}초 미달)"
+                )
+            parts.append("[고지띠 노출 시간 위반]\n" + "\n".join(dv_lines))
         combined = "\n\n".join(parts)
 
         if not combined:

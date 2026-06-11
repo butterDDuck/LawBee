@@ -524,14 +524,16 @@ def new_review():
                 st.video(up)
         with right:
             _ai_guide("영상의 음성·화면을 분석해 구간별로 심의하고, 위반을 타임라인에 표시합니다.")
-        st.write("")
-        if st.button("AI 심의 요청", type="primary", disabled=(up is None or not title.strip())):
-            st.session_state["_video_uploading"] = True
-            st.session_state["_video_upload_data"] = {
-                "file": (up.name, up.getvalue(), up.type),
-                "title": title.strip(),
-            }
-            st.rerun()
+            st.write("")
+            st.markdown('<style>[class*="st-key-video-submit"] button{padding:14px 0 !important;font-size:15px !important;}</style>', unsafe_allow_html=True)
+            if st.button("AI 심의 요청", type="primary", use_container_width=True,
+                         key="video-submit", disabled=(up is None or not title.strip())):
+                st.session_state["_video_uploading"] = True
+                st.session_state["_video_upload_data"] = {
+                    "file": (up.name, up.getvalue(), up.type),
+                    "title": title.strip(),
+                }
+                st.rerun()
 
 
 # --- 화면: 검수·결재 상세 ---

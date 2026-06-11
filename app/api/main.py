@@ -15,6 +15,7 @@ from app.config import settings
 from app.domain.schema import (
     DecisionRequest,
     DecisionStatus,
+    ReviewMode,
     ReviewRecord,
     ReviewRequest,
     ReviewResult,
@@ -57,7 +58,7 @@ def review(req: ReviewRequest) -> ReviewResult:
     """콘텐츠를 즉시 심의하여 결과만 반환 (저장하지 않음)"""
     if not req.content.strip():
         raise HTTPException(status_code=400, detail="content 가 비어 있습니다")
-    return run_review(req.content, media=req.media)
+    return run_review(req.content, media=req.media, review_mode=req.review_mode)
 
 
 # --- 준법관리자 결재 워크플로우 ---
@@ -67,7 +68,7 @@ def create_review(req: ReviewRequest) -> ReviewRecord:
     """콘텐츠 제출 → AI 1차 심의 자동 실행 → 대기 상태로 저장"""
     if not req.content.strip():
         raise HTTPException(status_code=400, detail="content 가 비어 있습니다")
-    return store.create_review(req.content, media=req.media, title=req.title)
+    return store.create_review(req.content, media=req.media, title=req.title, review_mode=req.review_mode)
 
 
 @app.get("/reviews", response_model=list[ReviewRecord])
@@ -87,27 +88,34 @@ def get_review(review_id: int) -> ReviewRecord:
 
 # --- 멀티모달 (이미지·영상) ---
 
-def _seg(start, end, text, terms, kind):
-    """텍스트에 위반 문구(룰 탐지어)를 매핑한 타임라인 구간 생성"""
+def _seg(start, end, text, term_severity, kind):
+    """텍스트에 위반 문구(룰 탐지어)를 매핑한 타임라인 구간 생성
+    term_severity: {term: 'high'|'medium'} 딕셔너리
+    """
     one = " ".join(text.split())
-    hit = [t for t in terms if t in text]
+    hit = [t for t in term_severity if t in text]
     disp = (one[:70] + "…") if len(one) > 70 else one
-    return TimelineSegment(start=start, end=end, text=disp, flagged=bool(hit), terms=hit, kind=kind)
+    sev = "high" if any(term_severity[t] == "high" for t in hit) else ("medium" if hit else "")
+    return TimelineSegment(start=start, end=end, text=disp, flagged=bool(hit), terms=hit, kind=kind, severity=sev)
 
 
 @app.post("/reviews/image", response_model=ReviewRecord)
-async def create_review_image(file: UploadFile = File(...), title: str = Form("")) -> ReviewRecord:
+async def create_review_image(
+    file: UploadFile = File(...),
+    title: str = Form(""),
+    review_mode: ReviewMode = Form("표준"),
+) -> ReviewRecord:
     """이미지 업로드 → Vision 텍스트 추출 → AI 심의 → 대기 저장"""
     data = await file.read()
     if not data:
         raise HTTPException(status_code=400, detail="이미지 파일이 비어 있습니다")
     text = extract_content(data)
-    rec = store.create_review(text, media="이미지", title=title or None)
+    rec = store.create_review(text, media="이미지", title=title or None, review_mode=review_mode)
     _save_media(rec.id, data, file.filename)
     return rec
 
 
-def _process_video(review_id: int, data: bytes, fname: str) -> None:
+def _process_video(review_id: int, data: bytes, fname: str, review_mode: str = "표준") -> None:
     """백그라운드 영상 분석 — Whisper 포함 전 과정 처리 후 DB 갱신"""
     import time as _time
     import traceback as _tb
@@ -166,7 +174,7 @@ def _process_video(review_id: int, data: bytes, fname: str) -> None:
         result = None
         for attempt in range(3):
             try:
-                result = run_review(combined, media="영상")
+                result = run_review(combined, media="영상", review_mode=review_mode)
                 break
             except Exception as e:
                 if attempt < 2:
@@ -174,15 +182,16 @@ def _process_video(review_id: int, data: bytes, fname: str) -> None:
                 else:
                     raise
 
-        terms = [h.term for h in result.rule_hits]
-        audio_tl = [_seg(s.start, s.end, s.text, terms, "음성") for s in segments_raw]
+        term_severity = {h.term: h.severity for h in result.rule_hits}
+        audio_tl = [_seg(s.start, s.end, s.text, term_severity, "음성") for s in segments_raw]
         visual_tl = []
         for t, txt, finds in frame_data:
             cats = [f.get("category") for f in finds if f.get("category")]
             one = " ".join(txt.split())
             disp = (one[:64] + "…") if len(one) > 64 else (one or "(화면)")
+            sev = "high" if any(f.get("severity") == "high" for f in finds) else ("medium" if finds else "")
             visual_tl.append(TimelineSegment(start=t, end=t + 4.0, text=disp,
-                                             flagged=bool(finds), terms=cats, kind="화면"))
+                                             flagged=bool(finds), terms=cats, kind="화면", severity=sev))
         result.timeline = sorted(audio_tl + visual_tl, key=lambda x: x.start)
 
         # content 업데이트 후 ai_result 갱신
@@ -199,6 +208,7 @@ async def create_review_video(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     title: str = Form(""),
+    review_mode: ReviewMode = Form("표준"),
 ) -> ReviewRecord:
     """영상 업로드 → 즉시 레코드 반환 후 백그라운드에서 전 과정 분석 진행"""
     data = await file.read()
@@ -207,10 +217,10 @@ async def create_review_video(
     fname = file.filename or "upload.mp4"
 
     # 처리중 레코드 즉시 생성 후 반환 — Whisper 포함 모든 분석은 백그라운드 처리
-    rec = store.create_pending("(분석 중…)", "영상", title=title or None)
+    rec = store.create_pending("(분석 중…)", "영상", title=title or None, review_mode=review_mode)
     _save_media(rec.id, data, fname)
 
-    background_tasks.add_task(_process_video, rec.id, data, fname)
+    background_tasks.add_task(_process_video, rec.id, data, fname, review_mode)
     return rec
 
 

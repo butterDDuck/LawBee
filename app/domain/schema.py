@@ -9,6 +9,9 @@ Status = Literal["위반", "주의", "통과"]
 # 준법관리자 결재 상태 ("처리중"은 영상 분석 완료 전 임시 상태)
 DecisionStatus = Literal["대기", "승인", "조건부승인", "반려", "처리중"]
 
+# 심의 강도
+ReviewMode = Literal["강화", "표준", "완화", "AI추천"]
+
 
 class ReviewRequest(BaseModel):
     """심의 요청"""
@@ -16,6 +19,7 @@ class ReviewRequest(BaseModel):
     content: str = Field(..., description="심의 대상 마케팅 콘텐츠 원문")
     media: str | None = Field(None, description="콘텐츠 매체: 텍스트 | 영상 | UI")
     title: str | None = Field(None, description="콘텐츠 제목")
+    review_mode: ReviewMode = Field("표준", description="심의 강도: 강화 | 표준 | 완화 | AI추천")
 
 
 class RuleHit(BaseModel):
@@ -61,6 +65,7 @@ class TimelineSegment(BaseModel):
     flagged: bool = Field(False, description="위반 문구 포함 여부")
     terms: list[str] = Field(default_factory=list, description="구간에서 탐지된 위반 문구")
     kind: str = Field("음성", description="음성 | 화면")
+    severity: str = Field("", description="high | medium | 빈값(통과)")
 
 
 class ReviewResult(BaseModel):
@@ -90,6 +95,7 @@ class ReviewRecord(BaseModel):
     content: str
     title: str | None = None
     media: str | None = None
+    review_mode: ReviewMode = "표준"
     decision_status: DecisionStatus = "대기"
     ai_result: ReviewResult
     comment: str = ""

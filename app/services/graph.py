@@ -15,14 +15,39 @@ from app.rag.retriever import search
 from app.domain.schema import (
     Citation,
     Judgment,
+    ReviewMode,
     ReviewResult,
     RuleHit,
 )
 
 
+_MODE_GUIDE: dict[str, str] = {
+    "강화": (
+        "【심의 강도: 강화】 법령 저촉이 명백하지 않더라도 소지가 있으면 '위반'으로 분류하세요. "
+        "주의 수준의 표현도 위반으로 상향 판정하고, 작은 불명확성도 놓치지 마세요. "
+        "사전 예방 목적의 엄격한 심의입니다."
+    ),
+    "표준": (
+        "【심의 강도: 표준】 명백한 법령 저촉은 '위반', 소지가 있으나 맥락에 따라 달라질 수 있으면 '주의', "
+        "문제없으면 '통과'로 분류하세요."
+    ),
+    "완화": (
+        "【심의 강도: 완화】 명백한 법령 저촉이 확인된 경우에만 '위반'으로 분류하세요. "
+        "단순 소지나 해석 여지가 있는 경우는 '주의' 또는 '통과'로 처리하고, "
+        "실무 맥락상 통용되는 표현은 관대하게 판단하세요."
+    ),
+    "AI추천": (
+        "【심의 강도: AI 자동 결정】 콘텐츠의 금융상품 유형, 매체, 위험도를 먼저 분석한 뒤 "
+        "적절한 심의 강도를 스스로 결정하세요. 고위험 투자상품·영상 광고는 강화, "
+        "단순 예금·텍스트 안내는 표준~완화를 적용하고, 결정한 강도를 summary 첫 줄에 명시하세요."
+    ),
+}
+
+
 class State(TypedDict, total=False):
     content: str
     media: str | None
+    review_mode: str
     rule_hits: list[RuleHit]
     retrieved: list[dict]
     judgment: Judgment
@@ -73,10 +98,14 @@ def judge_node(state: State) -> State:
         for h in state.get("rule_hits", [])
     ) or "(룰 탐지 없음)"
 
+    mode = state.get("review_mode") or "표준"
+    mode_guide = _MODE_GUIDE.get(mode, _MODE_GUIDE["표준"])
+
     system = (
         "당신은 금융회사의 마케팅 콘텐츠를 심의하는 준법 심의역입니다. "
         "아래 제공된 규제 조항과 룰 엔진 탐지 결과만을 근거로 콘텐츠의 위반 여부를 판단하세요. "
         "근거 조항은 반드시 제공된 조항 id 중에서만 인용하고, 제공되지 않은 사실을 지어내지 마세요.\n\n"
+        f"{mode_guide}\n\n"
 
         "【판정 기준】\n"
         "- 위반: 법령·감독 규정에 명백히 저촉되는 표현이 존재하는 경우\n"
@@ -158,9 +187,9 @@ def _compiled():
     return g.compile()
 
 
-def run_review(content: str, media: str | None = None) -> ReviewResult:
+def run_review(content: str, media: str | None = None, review_mode: str = "표준") -> ReviewResult:
     """심의 파이프라인 실행 후 구조화된 결과 반환"""
-    final: State = _compiled().invoke({"content": content, "media": media})
+    final: State = _compiled().invoke({"content": content, "media": media, "review_mode": review_mode})
 
     judgment = final["judgment"]
     # 판단이 인용한 조항만 근거로 정리

@@ -541,32 +541,32 @@ section[data-testid="stSidebar"] [data-testid="stSidebarUserContent"]{padding-to
 
 /* ── 파일 업로더 ── */
 [data-testid="stFileUploaderDropzone"]{
-  position:relative !important;flex-direction:column !important;gap:16px !important;
+  position:relative !important;flex-direction:column !important;gap:10px !important;
   border:2px dashed #dde4ee !important;border-radius:14px !important;
-  background:#fafbfd !important;padding:58px 24px 34px !important;
-  min-height:210px !important;display:flex !important;align-items:center !important;
+  background:#fafbfd !important;padding:28px 24px 22px !important;
+  min-height:150px !important;display:flex !important;align-items:center !important;
   justify-content:center !important;}
 [data-testid="stFileUploaderDropzone"]:hover{
   border-color:#2563eb !important;background:#f0f5ff !important;}
 [data-testid="stFileUploaderDropzone"] button{
-  width:64px !important;height:64px !important;min-height:64px !important;padding:0 !important;
-  border:none !important;border-radius:18px !important;background:#fff !important;
-  box-shadow:0 10px 28px rgba(15,23,42,.08) !important;font-size:0 !important;
+  width:44px !important;height:44px !important;min-height:44px !important;padding:0 !important;
+  border:none !important;border-radius:13px !important;background:#fff !important;
+  box-shadow:0 6px 18px rgba(15,23,42,.08) !important;font-size:0 !important;
   display:grid !important;place-items:center !important;}
 [data-testid="stFileUploaderDropzone"] button *,
 [data-testid="stFileUploaderDropzone"] button svg,
 [data-testid="stFileUploaderDropzone"] button span{
   display:none !important;}
 [data-testid="stFileUploaderDropzone"] button::before{
-  content:"";display:block;width:34px;height:34px;background-repeat:no-repeat;
-  background-position:center;background-size:34px 34px;
+  content:"";display:block;width:24px;height:24px;background-repeat:no-repeat;
+  background-position:center;background-size:24px 24px;
   background-image:url("data:image/svg+xml,%3Csvg width='34' height='34' viewBox='0 0 34 34' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M17 22V8m0 0l-6 6m6-6l6 6' fill='none' stroke='%238b95a1' stroke-width='2.7' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M9 21v4.5A2.5 2.5 0 0011.5 28h11a2.5 2.5 0 002.5-2.5V21' fill='none' stroke='%238b95a1' stroke-width='2.7' stroke-linecap='round'/%3E%3C/svg%3E");}
 [data-testid="stFileUploaderDropzone"]::after{
   content:"파일을 끌어다 놓거나 클릭해서 업로드\\A MP4 · MOV · WEBM · 음성파일 · 최대 200MB";
   white-space:pre;text-align:center;line-height:1.6;
-  color:#8b95a1;font-size:15px;font-weight:650;}
+  color:#8b95a1;font-size:12px;font-weight:600;}
 [data-testid="stFileUploaderDropzone"]::first-line{
-  color:#111827;font-size:17px;font-weight:850;}
+  color:#374151;font-size:13px;font-weight:750;}
 [data-testid="stFileUploaderDropzone"] small,
 [data-testid="stFileUploaderDropzone"] [data-testid="stMarkdownContainer"] p,
 [data-testid="stFileUploaderDropzone"] [data-testid="stFileUploaderDropzoneInstructions"],
@@ -1075,21 +1075,76 @@ def new_review():
                                     height=238, label_visibility="collapsed",
                                     placeholder="광고 카피 본문 텍스트를 입력하십시오")
             elif mode == "이미지":
-                st.markdown(
-                    '<label class="nr-field-label">이미지 첨부 <span class="hint">음성·화면을 함께 분석합니다</span></label>',
-                    unsafe_allow_html=True)
-                up = st.file_uploader("이미지 첨부", type=["png", "jpg", "jpeg", "webp"],
-                                      label_visibility="collapsed")
-                if up:
-                    st.image(up, use_container_width=True)
+                hint_img = '<label class="nr-field-label">이미지 첨부 <span class="hint">음성·화면을 함께 분석합니다</span></label>'
+                if st.session_state.get("_up_img_name"):
+                    st.markdown(hint_img, unsafe_allow_html=True)
+                    fn = st.session_state["_up_img_name"]
+                    sz = st.session_state.get("_up_img_size", 0)
+                    sz_str = f"{sz / 1024:.0f}KB" if sz < 1024 * 1024 else f"{sz / 1024 / 1024:.1f}MB"
+                    col_f, col_d = st.columns([1, 0.18], vertical_alignment="center")
+                    col_f.markdown(
+                        f'<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;'
+                        f'padding:10px 14px;font-size:13px;color:#334155;font-weight:600;'
+                        f'display:flex;align-items:center;gap:8px;">'
+                        f'<span style="font-size:18px;">🖼</span>'
+                        f'<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{fn}</span>'
+                        f'<span style="color:#94a3b8;font-size:12px;font-weight:400;">{sz_str}</span>'
+                        f'</div>', unsafe_allow_html=True)
+                    if col_d.button("✕", key="del-img", help="파일 삭제"):
+                        for k in ("_up_img_name", "_up_img_size", "_up_img_data", "_up_img_type"):
+                            st.session_state.pop(k, None)
+                        st.rerun()
+                    up = type("F", (), {
+                        "name": st.session_state["_up_img_name"],
+                        "getvalue": lambda self: st.session_state["_up_img_data"],
+                        "type": st.session_state.get("_up_img_type", "image/png"),
+                    })()
+                else:
+                    st.markdown(hint_img, unsafe_allow_html=True)
+                    raw = st.file_uploader("이미지 첨부", type=["png", "jpg", "jpeg", "webp"],
+                                           label_visibility="collapsed", key="up_img")
+                    if raw:
+                        st.session_state["_up_img_name"] = raw.name
+                        st.session_state["_up_img_size"] = raw.size
+                        st.session_state["_up_img_data"] = raw.getvalue()
+                        st.session_state["_up_img_type"] = raw.type
+                        st.rerun()
             else:
-                st.markdown(
-                    '<label class="nr-field-label">영상 첨부 <span class="hint">음성·화면을 함께 분석합니다</span></label>',
-                    unsafe_allow_html=True)
-                up = st.file_uploader("영상 첨부", type=["mp4", "mov", "webm", "m4a", "mp3", "wav"],
-                                      label_visibility="collapsed")
-                if up:
-                    st.video(up)
+                hint = '<label class="nr-field-label">영상 첨부 <span class="hint">음성·화면을 함께 분석합니다</span></label>'
+                # 파일이 이미 세션에 캐시돼 있으면 미리보기 + 삭제 버튼 표시
+                if st.session_state.get("_up_video_name"):
+                    st.markdown(hint, unsafe_allow_html=True)
+                    fn = st.session_state["_up_video_name"]
+                    sz = st.session_state.get("_up_video_size", 0)
+                    sz_str = f"{sz / 1024 / 1024:.1f}MB" if sz else ""
+                    col_f, col_d = st.columns([1, 0.18], vertical_alignment="center")
+                    col_f.markdown(
+                        f'<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;'
+                        f'padding:10px 14px;font-size:13px;color:#334155;font-weight:600;'
+                        f'display:flex;align-items:center;gap:8px;">'
+                        f'<span style="font-size:18px;">🎬</span>'
+                        f'<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{fn}</span>'
+                        f'<span style="color:#94a3b8;font-size:12px;font-weight:400;">{sz_str}</span>'
+                        f'</div>', unsafe_allow_html=True)
+                    if col_d.button("✕", key="del-video", help="파일 삭제"):
+                        for k in ("_up_video_name", "_up_video_size", "_up_video_data", "_up_video_type"):
+                            st.session_state.pop(k, None)
+                        st.rerun()
+                    up = type("F", (), {
+                        "name": st.session_state["_up_video_name"],
+                        "getvalue": lambda self: st.session_state["_up_video_data"],
+                        "type": st.session_state.get("_up_video_type", "video/mp4"),
+                    })()
+                else:
+                    st.markdown(hint, unsafe_allow_html=True)
+                    raw = st.file_uploader("영상 첨부", type=["mp4", "mov", "webm", "m4a", "mp3", "wav"],
+                                           label_visibility="collapsed", key="up_vid")
+                    if raw:
+                        st.session_state["_up_video_name"] = raw.name
+                        st.session_state["_up_video_size"] = raw.size
+                        st.session_state["_up_video_data"] = raw.getvalue()
+                        st.session_state["_up_video_type"] = raw.type
+                        st.rerun()
 
     # ── 섹션 3: 심의 강도 선택 ──
     with st.container(border=False, key="nr-sec-3"):
@@ -1148,6 +1203,8 @@ def new_review():
                     disabled=not can_submit, key="nr-submit"):
                     with st.spinner("이미지에서 문구 추출 + 심의 중…"):
                         rec = api_create_image((up.name, up.getvalue(), up.type), title.strip(), review_mode)
+                    for k in ("_up_img_name", "_up_img_size", "_up_img_data", "_up_img_type"):
+                        st.session_state.pop(k, None)
                     go("detail", rec["id"])
             else:
                 if st.button(
@@ -1160,6 +1217,9 @@ def new_review():
                         "title": title.strip(),
                         "review_mode": review_mode,
                     }
+                    # 캐시 정리
+                    for k in ("_up_video_name", "_up_video_size", "_up_video_data", "_up_video_type"):
+                        st.session_state.pop(k, None)
                     st.rerun()
 
 
@@ -1186,7 +1246,17 @@ _VIDEO_TPL = """
   <div style="display:flex;flex-direction:column;border:1px solid #e6eaf1;border-radius:14px;background:#fff;overflow:hidden;height:420px;box-shadow:0 8px 22px rgba(15,23,42,.05);">
     <div style="padding:10px 14px;border-bottom:1px solid #eef1f6;font-size:13px;font-weight:800;color:#0f1b2d;display:flex;align-items:center;gap:7px;">
       <span style="width:7px;height:7px;border-radius:9px;background:#34d399;display:inline-block;flex-shrink:0;"></span>실시간 위반 감지
-      <span id="scan-counter" style="margin-left:auto;font-size:11px;color:#94a3b8;font-weight:600;font-family:ui-monospace,monospace;"></span>
+      <div style="margin-left:auto;display:flex;align-items:center;gap:5px;">
+        <span id="cnt-high" style="display:none;align-items:center;gap:4px;background:#fef2f2;color:#dc2626;
+          font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px;border:1px solid #fecaca;">
+          위반 <span id="cnt-high-n">0</span>
+        </span>
+        <span id="cnt-mid" style="display:none;align-items:center;gap:4px;background:#fffbeb;color:#d97706;
+          font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px;border:1px solid #fde68a;">
+          주의 <span id="cnt-mid-n">0</span>
+        </span>
+        <span id="scan-counter" style="font-size:11px;color:#94a3b8;font-weight:600;font-family:ui-monospace,monospace;"></span>
+      </div>
     </div>
     <div id="segs" style="flex:1;overflow:auto;padding:4px 0;">__FEED_INIT__</div>
   </div>
@@ -1197,9 +1267,14 @@ const IS_PROCESSING = __IS_PROCESSING__;
 const vid = document.getElementById('vid');
 const wrap = document.getElementById('segs');
 const counter = document.getElementById('scan-counter');
+const cntHighEl = document.getElementById('cnt-high');
+const cntHighN  = document.getElementById('cnt-high-n');
+const cntMidEl  = document.getElementById('cnt-mid');
+const cntMidN   = document.getElementById('cnt-mid-n');
 var shown = new Array(SEGS.length).fill(false);
 var scanned = 0;
-var flagCount = 0;
+var highCount = 0;
+var midCount  = 0;
 
 function tryAutoplay() {
   if (!vid) return;
@@ -1214,10 +1289,19 @@ setTimeout(tryAutoplay, 250);
 function mmss(t){var m=Math.floor(t/60),s=Math.floor(t%60);return (''+m).padStart(2,'0')+':'+(''+s).padStart(2,'0');}
 
 function updateCounter() {
-  if (!counter) return;
-  if (scanned === 0) { counter.textContent = ''; return; }
-  counter.textContent = scanned + ' / ' + SEGS.length + ' 구간'
-    + (flagCount > 0 ? ' · 주의 ' + flagCount : '');
+  if (scanned > 0) {
+    if (counter) counter.textContent = scanned + ' / ' + SEGS.length + ' 구간';
+  } else {
+    if (counter) counter.textContent = '';
+  }
+  if (cntHighEl) {
+    cntHighN.textContent = highCount;
+    cntHighEl.style.display = highCount > 0 ? 'inline-flex' : 'none';
+  }
+  if (cntMidEl) {
+    cntMidN.textContent = midCount;
+    cntMidEl.style.display = midCount > 0 ? 'inline-flex' : 'none';
+  }
 }
 
 function highlightTerms(text, terms, bg, color) {
@@ -1292,7 +1376,10 @@ function syncFeed(t) {
     el.scrollIntoView({behavior:'smooth', block:'nearest'});
     shown[i] = true;
     scanned++;
-    if (s.flagged) { flagCount++; revealNextFinding(); }
+    if (s.flagged) {
+      if (s.severity === 'high') highCount++; else midCount++;
+      revealNextFinding();
+    }
     updateCounter();
   });
 }
@@ -1306,7 +1393,10 @@ vid.addEventListener('seeked', function(){
     wrap.appendChild(el);
     shown[i] = true;
     scanned++;
-    if (s.flagged) { flagCount++; revealNextFinding(); }
+    if (s.flagged) {
+      if (s.severity === 'high') highCount++; else midCount++;
+      revealNextFinding();
+    }
   });
   updateCounter();
 });

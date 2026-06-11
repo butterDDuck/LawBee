@@ -22,6 +22,8 @@ services:
     environment:
       # 컨테이너 네트워크 내에서 api 서비스 호출
       - API_BASE_URL=http://api:8000
+      # 브라우저에서 미디어 파일 접근용 공개 URL
+      - PUBLIC_API_URL=http://52.62.217.72:8000
     depends_on:
       - api
     restart: unless-stopped

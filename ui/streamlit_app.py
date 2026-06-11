@@ -15,6 +15,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 API = os.environ.get("API_BASE_URL", "http://127.0.0.1:8000")
+PUBLIC_API = os.environ.get("PUBLIC_API_URL", API)
 
 # 디자인 색 시스템
 TONE = {
@@ -1459,7 +1460,7 @@ def _video_review(rid, timeline, findings=None, is_processing=False):
          for s in timeline], ensure_ascii=False)
     feed_content = _SKELETON_HTML if is_processing else ""
     out = (_VIDEO_TPL
-           .replace("__URL__", f"{API}/reviews/{rid}/media")
+           .replace("__URL__", f"{PUBLIC_API}/reviews/{rid}/media")
            .replace("__SEGS__", segs)
            .replace("__IS_PROCESSING__", "true" if is_processing else "false")
            .replace("__FEED_INIT__", feed_content))

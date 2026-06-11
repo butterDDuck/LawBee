@@ -502,6 +502,22 @@ def new_review():
             go("detail", rec["id"])
 
     else:  # 영상
+        # 업로드 진행 중이면 폼 대신 로딩 화면만 표시
+        if st.session_state.get("_video_uploading"):
+            st.markdown("""
+<div style="text-align:center;padding:60px 0;">
+  <div class="lb-pulse" style="display:inline-block;width:10px;height:10px;border-radius:999px;
+    background:#34d399;margin-right:10px;vertical-align:middle;"></div>
+  <span style="font-size:15px;font-weight:700;color:#52617a;vertical-align:middle;">
+    영상을 업로드하고 있습니다…
+  </span>
+</div>""", unsafe_allow_html=True)
+            up_data = st.session_state.pop("_video_upload_data")
+            rec = api_create_video(up_data["file"], up_data["title"])
+            st.session_state.pop("_video_uploading", None)
+            go("detail", rec["id"])
+            return
+
         with left:
             up = st.file_uploader("영상 첨부", type=["mp4", "mov", "webm", "m4a", "mp3", "wav"])
             if up:
@@ -510,9 +526,12 @@ def new_review():
             _ai_guide("영상의 음성·화면을 분석해 구간별로 심의하고, 위반을 타임라인에 표시합니다.")
         st.write("")
         if st.button("AI 심의 요청", type="primary", disabled=(up is None or not title.strip())):
-            with st.spinner("업로드 중…"):
-                rec = api_create_video((up.name, up.getvalue(), up.type), title.strip())
-            go("detail", rec["id"])
+            st.session_state["_video_uploading"] = True
+            st.session_state["_video_upload_data"] = {
+                "file": (up.name, up.getvalue(), up.type),
+                "title": title.strip(),
+            }
+            st.rerun()
 
 
 # --- 화면: 검수·결재 상세 ---

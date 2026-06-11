@@ -2,6 +2,7 @@
 import json
 from functools import lru_cache
 
+from kiwipiepy import Kiwi
 from rank_bm25 import BM25Okapi
 from langchain_openai import OpenAIEmbeddings
 from langchain_community.vectorstores import FAISS
@@ -39,10 +40,24 @@ def _load_docs() -> list[Document]:
 
 
 @lru_cache(maxsize=1)
+def _kiwi() -> Kiwi:
+    return Kiwi()
+
+
+def _tokenize(text: str) -> list[str]:
+    """형태소 분석 기반 토크나이징 — 명사·동사·형용사·부사만 추출"""
+    return [
+        token.form
+        for token in _kiwi().tokenize(text)
+        if token.tag[:2] in ("NN", "VV", "VA", "MA", "XR")
+    ]
+
+
+@lru_cache(maxsize=1)
 def _get_bm25() -> BM25Okapi:
-    """BM25 인덱스 — 공백 토크나이징"""
+    """BM25 인덱스 — 형태소 분석 기반 토크나이징"""
     docs = _load_docs()
-    return BM25Okapi([d.page_content.split() for d in docs])
+    return BM25Okapi([_tokenize(d.page_content) for d in docs])
 
 
 @lru_cache(maxsize=1)
@@ -80,8 +95,8 @@ def search(
     fetch_k = k * 6
     docs = _load_docs()
 
-    # 1) BM25 검색
-    bm25_scores = _get_bm25().get_scores(query.split())
+    # 1) BM25 검색 — 형태소 분석으로 쿼리 토크나이징
+    bm25_scores = _get_bm25().get_scores(_tokenize(query))
     bm25_ranking = sorted(range(len(docs)), key=lambda i: bm25_scores[i], reverse=True)[:fetch_k]
 
     # 2) FAISS 검색

@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     openai_vision_model: str = "gpt-4o-mini"
     openai_stt_model: str = "whisper-1"
 
-    data_path: str = "data/regulations.jsonl"
+    data_path: str = "data/regulations_merged.jsonl"
     vectorstore_dir: str = "vectorstore"
     db_path: str = "lawbee.db"
     uploads_dir: str = "var/uploads"

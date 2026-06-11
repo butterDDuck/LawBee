@@ -1075,13 +1075,40 @@ def new_review():
                                     height=238, label_visibility="collapsed",
                                     placeholder="광고 카피 본문 텍스트를 입력하십시오")
             elif mode == "이미지":
-                st.markdown(
-                    '<label class="nr-field-label">이미지 첨부 <span class="hint">음성·화면을 함께 분석합니다</span></label>',
-                    unsafe_allow_html=True)
-                up = st.file_uploader("이미지 첨부", type=["png", "jpg", "jpeg", "webp"],
-                                      label_visibility="collapsed", key="up_img")
-                if up:
-                    st.image(up, use_container_width=True)
+                hint_img = '<label class="nr-field-label">이미지 첨부 <span class="hint">음성·화면을 함께 분석합니다</span></label>'
+                if st.session_state.get("_up_img_name"):
+                    st.markdown(hint_img, unsafe_allow_html=True)
+                    fn = st.session_state["_up_img_name"]
+                    sz = st.session_state.get("_up_img_size", 0)
+                    sz_str = f"{sz / 1024:.0f}KB" if sz < 1024 * 1024 else f"{sz / 1024 / 1024:.1f}MB"
+                    col_f, col_d = st.columns([1, 0.18], vertical_alignment="center")
+                    col_f.markdown(
+                        f'<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;'
+                        f'padding:10px 14px;font-size:13px;color:#334155;font-weight:600;'
+                        f'display:flex;align-items:center;gap:8px;">'
+                        f'<span style="font-size:18px;">🖼</span>'
+                        f'<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{fn}</span>'
+                        f'<span style="color:#94a3b8;font-size:12px;font-weight:400;">{sz_str}</span>'
+                        f'</div>', unsafe_allow_html=True)
+                    if col_d.button("✕", key="del-img", help="파일 삭제"):
+                        for k in ("_up_img_name", "_up_img_size", "_up_img_data", "_up_img_type"):
+                            st.session_state.pop(k, None)
+                        st.rerun()
+                    up = type("F", (), {
+                        "name": st.session_state["_up_img_name"],
+                        "getvalue": lambda self: st.session_state["_up_img_data"],
+                        "type": st.session_state.get("_up_img_type", "image/png"),
+                    })()
+                else:
+                    st.markdown(hint_img, unsafe_allow_html=True)
+                    raw = st.file_uploader("이미지 첨부", type=["png", "jpg", "jpeg", "webp"],
+                                           label_visibility="collapsed", key="up_img")
+                    if raw:
+                        st.session_state["_up_img_name"] = raw.name
+                        st.session_state["_up_img_size"] = raw.size
+                        st.session_state["_up_img_data"] = raw.getvalue()
+                        st.session_state["_up_img_type"] = raw.type
+                        st.rerun()
             else:
                 hint = '<label class="nr-field-label">영상 첨부 <span class="hint">음성·화면을 함께 분석합니다</span></label>'
                 # 파일이 이미 세션에 캐시돼 있으면 미리보기 + 삭제 버튼 표시
@@ -1176,6 +1203,8 @@ def new_review():
                     disabled=not can_submit, key="nr-submit"):
                     with st.spinner("이미지에서 문구 추출 + 심의 중…"):
                         rec = api_create_image((up.name, up.getvalue(), up.type), title.strip(), review_mode)
+                    for k in ("_up_img_name", "_up_img_size", "_up_img_data", "_up_img_type"):
+                        st.session_state.pop(k, None)
                     go("detail", rec["id"])
             else:
                 if st.button(

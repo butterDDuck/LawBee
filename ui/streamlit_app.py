@@ -155,7 +155,7 @@ def highlight(content, rule_hits):
 
 def badge(text, tone, dot=False, sm=False):
     c = TONE[tone]
-    pad, fs, ds = ("2px 8px", "11px", "5px") if sm else ("3px 10px", "12px", "6px")
+    pad, fs, ds = ("4px 10px", "13px", "5px") if sm else ("3px 10px", "12px", "6px")
     d = (f'<span style="width:{ds}px;height:{ds}px;border-radius:999px;background:{c["dot"]};'
          f'margin-right:5px;display:inline-block;"></span>') if dot else ""
     return (f'<span style="display:inline-flex;align-items:center;padding:{pad};border-radius:999px;'
@@ -173,7 +173,7 @@ MEDIA_ICON = {"텍스트": "▭", "이미지": "▧", "영상": "▷", "UI": "�
 
 def media_tag(m):
     icon = MEDIA_ICON.get(m, "▭")
-    return (f'<span style="display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:#475569;">'
+    return (f'<span style="display:inline-flex;align-items:center;gap:6px;font-size:14.5px;font-weight:600;color:#405572;">'
             f'<span style="display:inline-grid;place-items:center;width:18px;height:18px;border-radius:5px;'
             f'background:#eef2f8;color:#64748b;font-size:10px;">{icon}</span>{html.escape(m or "-")}</span>')
 
@@ -295,6 +295,9 @@ section[data-testid="stSidebar"] [data-testid="stSidebarUserContent"]{padding-to
 [class*="st-key-nr-sec-"] [data-testid="stVerticalBlock"]{gap:0.9rem;}
 
 /* ── 새 검수 — 유형 카드 버튼 ── */
+[class*="st-key-nr-sec-1"]{
+  padding:38px 42px 44px !important;border-radius:26px !important;
+  box-shadow:0 22px 48px rgba(15,23,42,.07) !important;}
 [class*="st-key-type-text"],
 [class*="st-key-type-image"],
 [class*="st-key-type-video"]{position:relative !important;}
@@ -302,50 +305,53 @@ section[data-testid="stSidebar"] [data-testid="stSidebarUserContent"]{padding-to
 [class*="st-key-type-image"] button,
 [class*="st-key-type-video"] button{
   position:relative !important;display:flex !important;flex-direction:column !important;
-  align-items:center !important;justify-content:center !important;gap:12px !important;
+  align-items:center !important;justify-content:center !important;gap:14px !important;
   background:#fff !important;border:1.5px solid #e0e6ef !important;
-  color:#475569 !important;border-radius:16px !important;
-  padding:18px 0 16px !important;min-height:92px !important;
-  box-shadow:none !important;
-  transition:border-color .15s,background .15s !important;}
+  color:#111827 !important;border-radius:24px !important;
+  padding:32px 24px 28px !important;min-height:250px !important;
+  box-shadow:none !important;text-align:center !important;
+  transition:border-color .15s,background .15s,box-shadow .15s !important;}
 [class*="st-key-type-text"] button p,
 [class*="st-key-type-image"] button p,
 [class*="st-key-type-video"] button p{
-  font-size:0 !important;margin:0 !important;line-height:0 !important;}
+  font-size:18px !important;font-weight:850 !important;color:#111827 !important;
+  line-height:1.15 !important;margin:0 !important;letter-spacing:-.025em !important;}
 [class*="st-key-type-text"] button::before,
 [class*="st-key-type-image"] button::before,
 [class*="st-key-type-video"] button::before{
-  content:"";display:block;width:34px;height:34px;margin-bottom:4px;
-  background-repeat:no-repeat;background-position:center;background-size:34px 34px;}
+  content:"";display:block;width:96px;height:96px;margin-bottom:8px;border-radius:999px;
+  background-color:#f1f5f9;background-repeat:no-repeat;background-position:center;background-size:44px 44px;}
 [class*="st-key-type-text"] button::before{
-  background-image:url("data:image/svg+xml,%3Csvg width='34' height='34' viewBox='0 0 34 34' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M10 11h14M10 17h14M10 23h9' stroke='%236b7a90' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E");}
+  background-image:url("data:image/svg+xml,%3Csvg width='44' height='44' viewBox='0 0 44 44' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M15 17h14M15 22h14M15 27h10' stroke='%235a6b83' stroke-width='3.2' stroke-linecap='round'/%3E%3C/svg%3E");}
 [class*="st-key-type-image"] button::before{
-  background-image:url("data:image/svg+xml,%3Csvg width='34' height='34' viewBox='0 0 34 34' xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='8' y='9' width='18' height='16' rx='3' fill='none' stroke='%236b7a90' stroke-width='2.2'/%3E%3Ccircle cx='14' cy='14' r='2' fill='%236b7a90'/%3E%3Cpath d='M10 23l5.2-5.3 3.5 3.4 2.4-2.5L26 23' fill='none' stroke='%236b7a90' stroke-width='2.1' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");}
+  background-image:url("data:image/svg+xml,%3Csvg width='44' height='44' viewBox='0 0 44 44' xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='11' y='12' width='22' height='20' rx='4' fill='none' stroke='%235a6b83' stroke-width='3'/%3E%3Ccircle cx='18' cy='18' r='2.5' fill='%235a6b83'/%3E%3Cpath d='M14 29l6.2-6.3 4.1 4 3-3.1L33 29' fill='none' stroke='%235a6b83' stroke-width='2.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");}
 [class*="st-key-type-video"] button::before{
-  background-image:url("data:image/svg+xml,%3Csvg width='34' height='34' viewBox='0 0 34 34' xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='7' y='11' width='15' height='12' rx='3' fill='none' stroke='%236b7a90' stroke-width='2.3'/%3E%3Cpath d='M23 15l5-3v10l-5-3z' fill='none' stroke='%236b7a90' stroke-width='2.3' stroke-linejoin='round'/%3E%3C/svg%3E");}
+  background-image:url("data:image/svg+xml,%3Csvg width='44' height='44' viewBox='0 0 44 44' xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='10' y='15' width='20' height='14' rx='4' fill='none' stroke='%235a6b83' stroke-width='3'/%3E%3Cpath d='M31 19l6-3.5v13L31 25z' fill='none' stroke='%235a6b83' stroke-width='3' stroke-linejoin='round'/%3E%3C/svg%3E");}
 [class*="st-key-type-text"] button::after,
 [class*="st-key-type-image"] button::after,
 [class*="st-key-type-video"] button::after{
-  display:block;font-size:14px;font-weight:850;line-height:1.2;color:#273449;}
-[class*="st-key-type-text"] button::after{content:"텍스트";}
-[class*="st-key-type-image"] button::after{content:"이미지";}
-[class*="st-key-type-video"] button::after{content:"영상";}
+  display:block;font-size:10px;font-weight:550;line-height:1.45;color:#69778e;margin-top:2px;}
+[class*="st-key-type-text"] button::after{content:"문서, 문구, 문장 등 텍스트 콘텐츠";}
+[class*="st-key-type-image"] button::after{content:"사진, 배너, 포스터 등 이미지 콘텐츠";}
+[class*="st-key-type-video"] button::after{content:"동영상, TVC, 유튜브 등 영상 콘텐츠";}
 [class*="st-key-type-text"] button[kind="primary"],
 [class*="st-key-type-image"] button[kind="primary"],
 [class*="st-key-type-video"] button[kind="primary"]{
-  background:#fbfdff !important;border:2px solid #1263ff !important;
-  color:#1263ff !important;font-weight:700 !important;box-shadow:none !important;}
+  background:#fbfdff !important;border:2px solid #1263ff !important;color:#1263ff !important;
+  box-shadow:0 14px 34px rgba(18,99,255,.06) !important;}
+[class*="st-key-type-text"] button[kind="primary"] p,
+[class*="st-key-type-image"] button[kind="primary"] p,
+[class*="st-key-type-video"] button[kind="primary"] p{color:#1263ff !important;}
 [class*="st-key-type-text"] button[kind="primary"]::before,
-[class*="st-key-type-text"] button[kind="primary"]::after,
-[class*="st-key-type-image"] button[kind="primary"]::after,
-[class*="st-key-type-video"] button[kind="primary"]::after{
-  color:#1263ff !important;}
-[class*="st-key-type-text"] button[kind="primary"]::before{
-  background-image:url("data:image/svg+xml,%3Csvg width='34' height='34' viewBox='0 0 34 34' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M10 11h14M10 17h14M10 23h9' stroke='%231263ff' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E");}
-[class*="st-key-type-image"] button[kind="primary"]::before{
-  background-image:url("data:image/svg+xml,%3Csvg width='34' height='34' viewBox='0 0 34 34' xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='8' y='9' width='18' height='16' rx='3' fill='none' stroke='%231263ff' stroke-width='2.2'/%3E%3Ccircle cx='14' cy='14' r='2' fill='%231263ff'/%3E%3Cpath d='M10 23l5.2-5.3 3.5 3.4 2.4-2.5L26 23' fill='none' stroke='%231263ff' stroke-width='2.1' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");}
+[class*="st-key-type-image"] button[kind="primary"]::before,
 [class*="st-key-type-video"] button[kind="primary"]::before{
-  background-image:url("data:image/svg+xml,%3Csvg width='34' height='34' viewBox='0 0 34 34' xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='7' y='11' width='15' height='12' rx='3' fill='none' stroke='%231263ff' stroke-width='2.3'/%3E%3Cpath d='M23 15l5-3v10l-5-3z' fill='none' stroke='%231263ff' stroke-width='2.3' stroke-linejoin='round'/%3E%3C/svg%3E");}
+  background-color:#eef5ff;}
+[class*="st-key-type-text"] button[kind="primary"]::before{
+  background-image:url("data:image/svg+xml,%3Csvg width='44' height='44' viewBox='0 0 44 44' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M15 17h14M15 22h14M15 27h10' stroke='%231263ff' stroke-width='3.2' stroke-linecap='round'/%3E%3C/svg%3E");}
+[class*="st-key-type-image"] button[kind="primary"]::before{
+  background-image:url("data:image/svg+xml,%3Csvg width='44' height='44' viewBox='0 0 44 44' xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='11' y='12' width='22' height='20' rx='4' fill='none' stroke='%231263ff' stroke-width='3'/%3E%3Ccircle cx='18' cy='18' r='2.5' fill='%231263ff'/%3E%3Cpath d='M14 29l6.2-6.3 4.1 4 3-3.1L33 29' fill='none' stroke='%231263ff' stroke-width='2.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");}
+[class*="st-key-type-video"] button[kind="primary"]::before{
+  background-image:url("data:image/svg+xml,%3Csvg width='44' height='44' viewBox='0 0 44 44' xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='10' y='15' width='20' height='14' rx='4' fill='none' stroke='%231263ff' stroke-width='3'/%3E%3Cpath d='M31 19l6-3.5v13L31 25z' fill='none' stroke='%231263ff' stroke-width='3' stroke-linejoin='round'/%3E%3C/svg%3E");}
 [class*="st-key-type-text"] button:hover:not([kind="primary"]),
 [class*="st-key-type-image"] button:hover:not([kind="primary"]),
 [class*="st-key-type-video"] button:hover:not([kind="primary"]){
@@ -354,9 +360,10 @@ section[data-testid="stSidebar"] [data-testid="stSidebarUserContent"]{padding-to
 [class*="st-key-type-text"]:has(button[kind="primary"])::after,
 [class*="st-key-type-image"]:has(button[kind="primary"])::after,
 [class*="st-key-type-video"]:has(button[kind="primary"])::after{
-  content:'';position:absolute;top:14px;right:14px;width:22px;height:22px;
+  content:'';position:absolute;top:32px;right:32px;width:34px;height:34px;
   border-radius:50%;pointer-events:none;z-index:10;
-  background:#1263ff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2 6.5L4.5 9 10 3.5' stroke='white' stroke-width='1.9' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/12px no-repeat;}
+  background:#1263ff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2 6.5L4.5 9 10 3.5' stroke='white' stroke-width='1.9' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/16px no-repeat;
+  box-shadow:0 8px 18px rgba(18,99,255,.22);}
 
 /* ── 새 검수 — 심의 강도 카드 버튼 ── */
 [class*="st-key-rm-strict"],
@@ -428,17 +435,36 @@ section[data-testid="stSidebar"] [data-testid="stSidebarUserContent"]{padding-to
   padding-bottom:32px !important;}
 
 /* ── 새 검수 — 매체 채널 필 버튼 ── */
+[class*="st-key-nr-sec-2"]{
+  padding:36px 42px 46px !important;border-radius:26px !important;
+  box-shadow:0 22px 48px rgba(15,23,42,.07) !important;}
 [class*="st-key-ch-"] button{
-  background:#f1f3f6 !important;border:none !important;
-  color:#4b5563 !important;border-radius:999px !important;
-  font-size:13px !important;font-weight:750 !important;
-  padding:9px 6px !important;min-height:42px !important;box-shadow:none !important;
+  background:#fff !important;border:1.5px solid #dfe6f0 !important;
+  color:#26384f !important;border-radius:13px !important;
+  padding:0 6px !important;height:48px !important;min-height:48px !important;box-shadow:none !important;
   transition:background .13s,color .13s,border .13s !important;}
+[class*="st-key-ch-"] button p{
+  white-space:nowrap !important;font-size:12.5px !important;line-height:1 !important;margin:0 !important;
+  font-weight:650 !important;}
 [class*="st-key-ch-"] button[kind="primary"]{
   background:#fff !important;border:1.5px solid #1263ff !important;
-  color:#1263ff !important;font-weight:700 !important;}
+  color:#1263ff !important;font-weight:700 !important;
+  box-shadow:0 8px 18px rgba(18,99,255,.08) !important;}
 [class*="st-key-ch-"] button:hover:not([kind="primary"]){
-  background:#e8edf5 !important;color:#1263ff !important;}
+  background:#fbfdff !important;color:#1263ff !important;border-color:#9bbcff !important;}
+[class*="st-key-nr-sample"] button{
+  width:108px !important;min-width:108px !important;height:38px !important;min-height:38px !important;
+  border-radius:12px !important;background:#fff !important;
+  border:1.5px solid #dfe6f0 !important;color:#26384f !important;
+  padding:0 10px !important;box-sizing:border-box !important;
+  box-shadow:none !important;}
+[class*="st-key-nr-sample"] button p{
+  white-space:nowrap !important;font-size:12.5px !important;line-height:1 !important;margin:0 !important;
+  font-weight:650 !important;}
+[class*="st-key-nr-sample"]{
+  transform:translateX(-34px);}
+[class*="st-key-nr-sample"] button:hover{
+  border-color:#9bbcff !important;color:#1263ff !important;background:#fbfdff !important;}
 
 /* ── 새 검수 — 하단 고정 바 ── */
 [class*="st-key-nr-actions"]{
@@ -495,6 +521,21 @@ section[data-testid="stSidebar"] [data-testid="stSidebarUserContent"]{padding-to
 [data-testid="stTextArea"] textarea,[data-testid="stTextInput"] input{
   border:1.5px solid #e2e8f0 !important;background:#fff !important;
   border-radius:10px !important;font-size:14px !important;min-height:46px !important;}
+[class*="st-key-nr-sec-2"] [data-testid="stTextInput"] input{
+  height:52px !important;min-height:52px !important;border-radius:13px !important;
+  font-size:14px !important;line-height:1.4 !important;color:#27364e !important;
+  padding:0 18px !important;box-sizing:border-box !important;box-shadow:none !important;}
+[class*="st-key-nr-sec-2"] [data-baseweb="input"]{
+  height:52px !important;min-height:52px !important;border-radius:13px !important;
+  display:flex !important;align-items:center !important;box-shadow:none !important;}
+[class*="st-key-nr-sec-2"] [data-baseweb="textarea"]{
+  box-shadow:none !important;border-radius:13px !important;}
+[class*="st-key-nr-sec-2"] [data-testid="stTextArea"] textarea{
+  border-radius:13px !important;font-size:14px !important;height:238px !important;min-height:238px !important;
+  padding:18px 20px !important;line-height:1.65 !important;color:#27364e !important;box-shadow:none !important;}
+[class*="st-key-nr-sec-2"] [data-testid="stTextInput"] input:focus,
+[class*="st-key-nr-sec-2"] [data-testid="stTextArea"] textarea:focus{
+  box-shadow:none !important;}
 [data-testid="stTextArea"] textarea:focus,[data-testid="stTextInput"] input:focus{
   border-color:#2563eb !important;box-shadow:0 0 0 3px rgba(37,99,235,.1) !important;}
 
@@ -534,24 +575,49 @@ section[data-testid="stSidebar"] [data-testid="stSidebarUserContent"]{padding-to
 [data-testid="stFileUploaderDropzone"] [class*="instructions"]{
   display:none !important;}
 .nr-field-label{
-  display:block;font-size:15px;font-weight:850;color:#111827;margin:4px 0 10px;}
+  display:block;font-size:17px;font-weight:850;color:#111827;margin:4px 0 12px;}
 .nr-field-label .hint{
-  color:#9aa3af;font-size:13px;font-weight:750;margin-left:4px;}
+  color:#9aa3af;font-size:14px;font-weight:750;margin-left:5px;}
 .nr-field-help{
   color:#8b95a1;font-size:13px;font-weight:650;margin:0 0 14px;}
 
 h1,h2,h3{color:#0f1b2d;}
 mark{text-decoration:none;}
 
-/* ── 대시보드 목록 ── */
+/* ── 대시보드 ── */
 [class*="st-key-listcard"]{background:#fff !important;border:1px solid #e6eaf1 !important;
-  border-radius:14px !important;box-shadow:0 2px 8px rgba(16,24,40,.05);padding:8px 26px 18px !important;}
-a.lb-row{color:inherit;transition:background .12s;animation:fadeIn .3s ease;border-radius:6px;display:block;}
+  border-radius:18px !important;box-shadow:0 14px 32px rgba(16,24,40,.045);padding:12px 26px 16px !important;}
+a.lb-row{color:inherit;transition:background .12s;animation:fadeIn .3s ease;border-radius:10px;display:block;}
 a.lb-row:hover{background:#f8fafe;}
-[class*="st-key-listcard"] [data-testid="stVerticalBlock"]{gap:.2rem;}
-[class*="st-key-listcard"] [data-testid="stHorizontalBlock"]{gap:.4rem;}
-[class*="st-key-bulk-del-btn"] button{color:#c0322b !important;border-color:#f0c9c4 !important;}
-[class*="st-key-bulk-del-btn"] button:hover{background:#fdecea !important;}
+[class*="st-key-listcard"] [data-testid="stVerticalBlock"]{gap:0 !important;}
+[class*="st-key-listcard"] [data-testid="stHorizontalBlock"]{gap:.35rem !important;margin:0 !important;}
+[class*="st-key-listcard"] [data-testid="stElementContainer"]{margin:0 !important;}
+[class*="st-key-listcard"] [data-testid="stCheckbox"]{display:flex;align-items:center;height:64px;transform:translateY(-5px);}
+[class*="st-key-dash-filter-"] button{
+  min-height:40px !important;border-radius:11px !important;padding:8px 18px !important;
+  font-size:13px !important;font-weight:850 !important;box-shadow:0 5px 14px rgba(16,24,40,.04) !important;}
+[class*="st-key-dash-filter-"] button[kind="secondary"]{
+  background:#fff !important;border:1px solid #e6eaf1 !important;color:#344055 !important;}
+[class*="st-key-dash-filter-"] button[kind="primary"]{
+  background:#2f7df6 !important;color:#fff !important;border:0 !important;
+  box-shadow:0 8px 18px rgba(47,125,246,.26) !important;}
+[class*="st-key-new-review-btn"] button{
+  min-height:44px !important;border-radius:13px !important;
+  background:#2f7df6 !important;color:#fff !important;border:0 !important;
+  font-size:13.5px !important;font-weight:850 !important;
+  box-shadow:0 10px 22px rgba(47,125,246,.26) !important;}
+[class*="st-key-new-review-btn"] button:hover{
+  background:#256ee8 !important;transform:translateY(-1px);
+  box-shadow:0 12px 26px rgba(47,125,246,.3) !important;}
+[class*="st-key-bulk-del-btn"] button{
+  min-height:44px !important;border-radius:13px !important;
+  background:#fff !important;color:#d1433c !important;border:1px solid #f0d3d0 !important;
+  font-size:13.5px !important;font-weight:850 !important;
+  box-shadow:0 8px 18px rgba(16,24,40,.04) !important;}
+[class*="st-key-bulk-del-btn"] button:hover{background:#fff5f4 !important;border-color:#efb4ae !important;}
+[class*="st-key-bulk-del-btn"] button:disabled{
+  background:#fff !important;color:#cbd3df !important;border-color:#e7ecf3 !important;
+  box-shadow:none !important;}
 [class*="st-key-del-confirm"] button{background:#c0322b !important;border:none !important;color:#fff !important;font-weight:800;}
 
 @keyframes fadeIn{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:none;}}
@@ -559,7 +625,7 @@ a.lb-row:hover{background:#f8fafe;}
 .lb-anim{animation:fadeIn .35s ease;}
 .lb-pulse{animation:pulse 1.7s infinite;}
 .lb-kpi{transition:all .15s ease;}
-.lb-kpi:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(16,24,40,.08);border-color:#d3ddee !important;}
+.lb-kpi:hover{transform:translateY(-1px);box-shadow:0 10px 22px rgba(16,24,40,.06);border-color:#d7e2f2 !important;}
 .lb-finding{transition:all .15s ease;}
 .lb-finding:hover{transform:translateY(-1px);box-shadow:0 5px 16px rgba(16,24,40,.08);}
 </style>
@@ -585,6 +651,8 @@ def go(view, rid=None):
     st.session_state["view"] = view
     st.session_state["rid"] = rid
     st.session_state.pop("decision", None)
+    st.markdown("<script>window.parent.scrollTo({top:0,behavior:'instant'});</script>",
+                unsafe_allow_html=True)
     st.rerun()
 
 
@@ -644,7 +712,7 @@ def sidebar():
             '<div style="font-size:10.5px;color:#94a3b8;line-height:1.5;">규정셋 v4.2 · 2026.05.30</div>'
             '</div>'
             '<div style="font-size:10.5px;color:#b8c2d0;line-height:1.7;padding:14px 4px 4px;">'
-            '드림은행 준법감시부<br>심의 콘솔 v1.0</div>',
+            'JB금융그룹 준법감시부<br>심의 콘솔 v1.0</div>',
             unsafe_allow_html=True)
 
 
@@ -686,6 +754,8 @@ def _confirm_delete(ids):
 
 
 def dashboard():
+    st.markdown("<style>.block-container{max-width:1500px !important;padding:1.4rem 3.2rem 3.5rem !important;}</style>",
+                unsafe_allow_html=True)
     topbar("준법심의 콘솔", "검수 대시보드", live_dot("AI 1차 심의 자동 적용 중"))
 
     if st.session_state.get("pending_bulk"):
@@ -701,27 +771,43 @@ def dashboard():
     for r in reviews:
         c[r["decision_status"]] = c.get(r["decision_status"], 0) + 1
 
-    tiles = [("전체 검수", c["전체"], "누적 요청", "건", "#2563eb"),
-             ("검토 대기", c["대기"], "결재 필요", "건", "#2563eb"),
-             ("승인 완료", c["승인"], "원안 승인", "건", "#1ca25b"),
-             ("결재 완료", c["승인"] + c["조건부승인"], "승인·조건부", "건", "#7c3aed"),
-             ("반려", c["반려"], "재작업", "건", "#dc4338")]
-    for col, (label, val, sub, unit, accent) in zip(st.columns(5), tiles):
+    tiles = [
+        ("전체 검수", c["전체"], "누적 요청", True),
+        ("검토 대기", c["대기"], "결재 필요", False),
+        ("승인 완료", c["승인"], "원안 승인", False),
+        ("조건부 승인", c["조건부승인"], "수정 후", False),
+        ("반려", c["반려"], "재작업", False),
+    ]
+    for col, (label, val, sub, active) in zip(st.columns(5, gap="small"), tiles):
+        border = "#2f7df6" if active else "#e7ecf3"
+        bg = "#f8fbff" if active else "#fff"
+        num_color = "#2563eb" if active else "#101828"
         col.markdown(
-            f'<div class="lb-anim lb-kpi" style="background:#fff;border:1px solid #e6eaf1;border-radius:13px;padding:16px 17px;">'
-            f'<div style="font-size:16px;font-weight:900;color:#4a5568;letter-spacing:-.025em;line-height:1.2;">{label}</div>'
-            f'<div style="display:flex;align-items:flex-end;gap:7px;margin-top:14px;">'
-            f'<span style="font-size:29px;font-weight:850;color:{accent};line-height:.95;letter-spacing:-.03em;">{val}</span>'
-            f'<span style="font-size:12px;font-weight:750;color:#94a3b8;padding-bottom:3px;">{unit}</span>'
-            f'<span style="margin-left:auto;font-size:12px;font-weight:700;color:#9aa6ba;padding-bottom:4px;">{sub}</span></div></div>',
+            f'<div class="lb-anim lb-kpi" style="height:96px;background:{bg};'
+            f'border:1.5px solid {border};border-radius:16px;'
+            f'padding:20px 22px;box-shadow:0 8px 22px rgba(16,24,40,.03);'
+            f'display:flex;flex-direction:column;justify-content:center;">'
+            f'<div style="font-size:17px;font-weight:900;color:#3f4d63;letter-spacing:-.025em;line-height:1.1;">'
+            f'{label}</div>'
+            f'<div style="display:flex;align-items:flex-end;gap:8px;margin-top:14px;width:100%;">'
+            f'<span style="font-size:31px;font-weight:900;color:{num_color};line-height:.86;letter-spacing:-.035em;">{val}</span>'
+            f'<span style="font-size:13px;font-weight:800;color:#8895a8;padding-bottom:2px;">건</span>'
+            f'<span style="margin-left:auto;text-align:right;font-size:13px;font-weight:800;color:#a2adbd;padding-bottom:2px;">{sub}</span>'
+            f'</div></div>',
             unsafe_allow_html=True)
 
     st.write("")
-    flt = st.segmented_control("상태", ["전체", "대기", "승인", "조건부승인", "반려"],
-                               default="전체", label_visibility="collapsed")
+    filter_map = {"전체": "전체", "대기": "대기", "승인": "승인", "조건부승인": "조건부승인", "반려": "반려"}
+    flt = st.session_state.get("dash_filter", "전체")
+    fcols = st.columns([0.42, 0.42, 0.42, 0.64, 0.42, 4.2], gap="small")
+    for col, label in zip(fcols[:5], filter_map):
+        if col.button(label, use_container_width=True, key=f"dash-filter-{label}",
+                      type="primary" if flt == filter_map[label] else "secondary"):
+            st.session_state["dash_filter"] = filter_map[label]
+            st.rerun()
+    flt = st.session_state.get("dash_filter", "전체")
 
-    # 툴바 — 카드 밖 위에 배치
-    tc1, tc2, tc3, tc4 = st.columns([3.6, 1.15, 1.25, 0.5], vertical_alignment="center")
+    tc1, tc2, tc3, tc4 = st.columns([6.0, 0.95, 1.15, 0.78], gap="small", vertical_alignment="center")
     q = tc1.text_input("검색", placeholder="제목·번호 검색", label_visibility="collapsed")
     media = tc2.selectbox("매체", ["모든 매체"] + MEDIA_OPTIONS, label_visibility="collapsed")
     if tc3.button(":material/add: 새 검수 요청", type="primary", use_container_width=True, key="new-review-btn"):
@@ -731,23 +817,26 @@ def dashboard():
             and (media == "모든 매체" or r["media"] == media)
             and (not q or q in title_of(r) or q in f"RV-{r['id']:04d}")]
     selected = [r["id"] for r in rows if st.session_state.get(f"sel-{r['id']}")]
-    if tc4.button(f":material/delete: {len(selected) or ''}".strip() or ":material/delete:", use_container_width=True,
+    delete_label = f":material/delete: 삭제 {len(selected)}" if selected else ":material/delete: 삭제"
+    if tc4.button(delete_label, use_container_width=True,
                   key="bulk-del-btn", disabled=not selected, help="선택 항목 삭제"):
         st.session_state["pending_bulk"] = set(selected)
         st.rerun()
 
     with st.container(border=True, key="listcard"):
         st.markdown(
-            f'<div style="font-weight:800;font-size:18px;color:#0f1b2d;letter-spacing:-.01em;padding-bottom:8px;padding-top:8px;">검수 목록 &nbsp;'
-            f'<span style="font-size:12.5px;font-weight:700;color:#64748b;background:#eef1f6;border:1px solid #dde3ec;border-radius:999px;padding:2px 9px;vertical-align:middle;">{len(rows)}건</span></div>',
+            f'<div style="font-weight:900;font-size:17px;color:#0f1b2d;letter-spacing:-.02em;'
+            f'padding-bottom:12px;padding-top:4px;">검수 목록 &nbsp;'
+            f'<span style="font-size:12px;font-weight:800;color:#7b8798;background:#eef2f7;'
+            f'border-radius:999px;padding:3px 10px;vertical-align:middle;">{len(rows)}건</span></div>',
             unsafe_allow_html=True)
 
-        grid = "minmax(180px,3.7fr) 0.64fr 0.74fr 0.92fr 0.52fr 0.42fr"
+        grid = "minmax(300px,3.4fr) .72fr .88fr .9fr .78fr .48fr"
         heads = ["콘텐츠 / 요청", "매체", "AI 심의결과", "발견 항목", "처리 상태", ""]
         hc = st.columns([0.032, 0.968], gap="small", vertical_alignment="center")
         hc[1].markdown(
-            f'<div style="display:grid;grid-template-columns:{grid};gap:12px;padding:4px 4px 8px;'
-            f'font-size:11.5px;font-weight:700;color:#8593a8;">'
+            f'<div style="display:grid;grid-template-columns:{grid};gap:18px;padding:2px 8px 12px;'
+            f'font-size:13px;font-weight:850;color:#9aa6b8;border-bottom:1px solid #edf1f6;">'
             + "".join(f"<div>{h}</div>" for h in heads) + "</div>", unsafe_allow_html=True)
         if not rows:
             st.info("조건에 맞는 검수 건이 없습니다.")
@@ -760,28 +849,41 @@ def dashboard():
             vlabel, vtone = ("분석 중", "slate") if is_processing else VERDICT[ai["status"]]
             slabel, stone = DSTATUS[r["decision_status"]]
             score = 0 if is_processing else ai_score(ai)
-            fb = badge("분석 중…", "slate", sm=True) if is_processing else (
-                (badge(f"위반 {high}", "red", sm=True) + " " if high else "") + (badge(f"주의 {mid}", "amber", sm=True) if mid else ""))
+            fb = '<span style="font-size:14.5px;font-weight:500;color:#9aa8bb;">분석 중</span>' if is_processing else (
+                (f'<span style="font-size:14.5px;font-weight:500;color:#50647f;">위반 {high}</span> ' if high else "")
+                + (f'<span style="font-size:14.5px;font-weight:500;color:#7a8aa0;">주의 {mid}</span>' if mid else ""))
             if not is_processing and not high and not mid:
-                fb = badge("이슈 없음", "green", sm=True)
-            trail = ('<span style="font-size:12px;font-weight:700;color:#2563eb;">결재 ›</span>'
+                fb = '<span style="font-size:14.5px;font-weight:500;color:#a5b0bf;">이슈 없음</span>'
+            verdict_color = "#50647f" if vtone == "red" else "#6d7f96" if vtone == "amber" else "#8997a8" if vtone == "green" else "#9aa8bb"
+            verdict_html = (
+                f'<span style="display:inline-flex;align-items:center;gap:6px;font-size:14.5px;font-weight:500;'
+                f'color:{verdict_color};">'
+                f'{html.escape(vlabel)}</span>'
+            )
+            status_html = (
+                f'<span style="display:inline-flex;align-items:center;justify-content:center;min-width:76px;'
+                f'height:30px;padding:0 12px;border-radius:999px;background:#eef5ff;'
+                f'color:#2563eb;font-size:14.5px;font-weight:500;">{html.escape(slabel)}</span>'
+            )
+            trail = ('<span style="font-size:15px;font-weight:600;color:#2563eb;">결재 ›</span>'
                      if r["decision_status"] == "대기"
-                     else '<span style="font-size:11.5px;color:#b9c2d0;">완료 ›</span>')
+                     else '<span style="font-size:14.5px;font-weight:500;color:#a9b5c5;">완료 ›</span>')
             rc = st.columns([0.032, 0.968], gap="small", vertical_alignment="center")
             rc[0].checkbox("선택", key=f"sel-{r['id']}", label_visibility="collapsed")
             rc[1].markdown(
                 f'<a class="lb-row" href="?rid={r["id"]}" target="_self" style="text-decoration:none;display:block;">'
-                f'<div style="display:grid;grid-template-columns:{grid};gap:12px;align-items:center;'
-                f'padding:8px 4px;border-bottom:1px solid #f1f3f8;">'
-                f'<div style="display:flex;align-items:center;gap:12px;min-width:0;">{score_ring(score, 34, 4)}'
-                f'<div style="min-width:0;"><div style="font-size:13.5px;font-weight:700;color:#0f1b2d;letter-spacing:-.01em;'
+                f'<div style="display:grid;grid-template-columns:{grid};gap:18px;align-items:center;'
+                f'height:64px;padding:0 8px;border-bottom:1px solid #f1f3f8;box-sizing:border-box;">'
+                f'<div style="display:flex;align-items:center;gap:15px;min-width:0;transform:translateY(-5px);">{score_ring(score, 38, 4)}'
+                f'<div style="min-width:0;display:flex;flex-direction:column;justify-content:center;">'
+                f'<div style="font-size:15.5px;font-weight:600;color:#152238;letter-spacing:-.01em;line-height:1.25;'
                 f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{html.escape(title_of(r))}</div>'
-                f'<div style="font-size:11px;color:#9aa6ba;font-weight:500;margin-top:2px;">RV-{r["id"]:04d} · {html.escape(r["created_at"][:10])}</div></div></div>'
-                f'<div>{media_tag(r["media"])}</div>'
-                f'<div>{badge(vlabel, vtone, dot=True, sm=True)}</div>'
-                f'<div>{fb}</div>'
-                f'<div>{badge(slabel, stone, sm=True)}</div>'
-                f'<div style="text-align:right;">{trail}</div></div></a>',
+                f'<div style="font-size:13.5px;color:#8d9aaf;font-weight:500;line-height:1.25;margin-top:4px;">RV-{r["id"]:04d} · {html.escape(r["created_at"][:10])}</div></div></div>'
+                f'<div style="display:flex;align-items:center;height:100%;transform:translateY(-5px);">{media_tag(r["media"])}</div>'
+                f'<div style="display:flex;align-items:center;height:100%;transform:translateY(-5px);">{verdict_html}</div>'
+                f'<div style="display:flex;align-items:center;height:100%;transform:translateY(-5px);">{fb}</div>'
+                f'<div style="display:flex;align-items:center;height:100%;transform:translateY(-5px);">{status_html}</div>'
+                f'<div style="display:flex;align-items:center;justify-content:flex-end;height:100%;text-align:right;transform:translateY(-5px);">{trail}</div></div></a>',
                 unsafe_allow_html=True)
 
 
@@ -842,9 +944,9 @@ def new_review():
             '영상을 업로드하고 있습니다…</span></div>',
             unsafe_allow_html=True)
         up_data = st.session_state.pop("_video_upload_data")
-        rec = api_create_video(up_data["file"], up_data["title"], up_data["review_mode"])
+        api_create_video(up_data["file"], up_data["title"], up_data["review_mode"])
         st.session_state.pop("_video_uploading", None)
-        go("detail", rec["id"])
+        go("dashboard")
         return
 
     # ── 상단 바 ──
@@ -889,7 +991,13 @@ def new_review():
     # ── 섹션 1: 콘텐츠 유형 선택 ──
     with st.container(border=False, key="nr-sec-1"):
         st.markdown(
-            '<div style="font-size:17px;font-weight:850;color:#111827;margin-bottom:20px;">1. 콘텐츠 유형 선택</div>',
+            '<div style="display:flex;align-items:flex-start;gap:18px;margin-bottom:34px;">'
+            '<div style="width:48px;height:48px;border-radius:999px;background:#eef5ff;color:#1263ff;'
+            'display:grid;place-items:center;font-size:25px;font-weight:900;line-height:1;">1</div>'
+            '<div><div style="font-size:21px;font-weight:900;color:#111827;letter-spacing:-.035em;line-height:1.15;">'
+            '콘텐츠 유형 선택</div>'
+            '<div style="font-size:10px;font-weight:500;color:#657389;margin-top:14px;">'
+            '심의할 콘텐츠의 유형을 선택해 주세요.</div></div></div>',
             unsafe_allow_html=True)
         mode = st.session_state.get("_new_mode", "텍스트")
         tc1, tc2, tc3 = st.columns(3, gap="medium")
@@ -905,55 +1013,47 @@ def new_review():
     # ── 섹션 2: 기본 정보 입력 ──
     with st.container(border=False, key="nr-sec-2"):
         st.markdown(
-            '<div style="font-size:17px;font-weight:850;color:#111827;margin-bottom:20px;">2. 기본 정보 입력</div>',
+            '<div style="display:flex;align-items:flex-start;gap:18px;margin-bottom:38px;">'
+            '<div style="width:48px;height:48px;border-radius:999px;background:#eef5ff;color:#1263ff;'
+            'display:grid;place-items:center;font-size:21px;font-weight:900;line-height:1;">2</div>'
+            '<div><div style="font-size:21px;font-weight:900;color:#111827;letter-spacing:-.035em;line-height:1.15;">'
+            '기본 정보 입력</div>'
+            '<div style="font-size:10px;font-weight:500;color:#657389;margin-top:14px;">'
+            '검수에 필요한 기본 정보를 입력해 주세요.</div></div></div>',
             unsafe_allow_html=True)
-        left, right = st.columns([1, 1], gap="medium")
-
-    else:  # 영상
-        # 업로드 진행 중이면 폼 대신 로딩 화면만 표시
-        if st.session_state.get("_video_uploading"):
-            st.markdown("""
-<div style="text-align:center;padding:60px 0;">
-  <div class="lb-pulse" style="display:inline-block;width:10px;height:10px;border-radius:999px;
-    background:#34d399;margin-right:10px;vertical-align:middle;"></div>
-  <span style="font-size:15px;font-weight:700;color:#52617a;vertical-align:middle;">
-    영상을 업로드하고 있습니다…
-  </span>
-</div>""", unsafe_allow_html=True)
-            up_data = st.session_state.pop("_video_upload_data")
-            rec = api_create_video(up_data["file"], up_data["title"], up_data.get("review_mode", "표준"))
-            st.session_state.pop("_video_uploading", None)
-            go("detail", rec["id"])
-            return
+        left, right = st.columns([1, 1], gap="large")
 
         with left:
             st.markdown('<label class="nr-field-label">제목</label>',
                         unsafe_allow_html=True)
             title = st.text_input("제목", label_visibility="collapsed",
-                                  placeholder="예) 신규 정기적금 「드림플러스」 출시 배너")
+                                  placeholder="예) 신규 정기적금 ‘드림플러스’ 출시 안내")
 
             st.markdown(
-                '<label class="nr-field-label">관련 상품 <span class="hint">선택</span></label>',
-                unsafe_allow_html=True)
-            st.text_input("관련 상품", label_visibility="collapsed",
-                          placeholder="예) 수신 · 정기적금", key="new_product")
-
-            st.markdown(
+                '<div style="height:34px;"></div>'
                 '<label class="nr-field-label">매체 <span class="hint">콘텐츠가 노출될 채널</span></label>',
                 unsafe_allow_html=True)
             channel = st.session_state.get("_new_channel", "웹/배너")
+            ch_icons = {
+                "웹/배너": "desktop_windows",
+                "앱 푸시": "smartphone",
+                "유튜브/영상": "smart_display",
+                "인스타·SNS": "photo_camera",
+                "이메일": "mail",
+                "지면(인쇄)": "description",
+            }
             ch_r1 = st.columns(3, gap="small")
             ch_r2 = st.columns(3, gap="small")
             for col_c, ch in zip(ch_r1, _CHANNEL_OPTIONS[:3]):
                 with col_c:
-                    if st.button(ch, key=f"ch-{ch.replace('/', '_').replace('·', '_')}",
+                    if st.button(f":material/{ch_icons.get(ch, 'campaign')}: {ch}", key=f"ch-{ch.replace('/', '_').replace('·', '_')}",
                                  use_container_width=True,
                                  type="primary" if channel == ch else "secondary"):
                         st.session_state["_new_channel"] = ch
                         st.rerun()
             for col_c, ch in zip(ch_r2, _CHANNEL_OPTIONS[3:]):
                 with col_c:
-                    if st.button(ch, key=f"ch-{ch.replace('/', '_').replace('·', '_')}",
+                    if st.button(f":material/{ch_icons.get(ch, 'campaign')}: {ch}", key=f"ch-{ch.replace('/', '_').replace('·', '_')}",
                                  use_container_width=True,
                                  type="primary" if channel == ch else "secondary"):
                         st.session_state["_new_channel"] = ch
@@ -963,7 +1063,7 @@ def new_review():
             up = None
             body = ""
             if mode == "텍스트":
-                sc1, sc2 = st.columns([2, 1])
+                sc1, sc2 = st.columns([2.25, 0.8], gap="small", vertical_alignment="center")
                 sc1.markdown('<label class="nr-field-label">광고/콘텐츠 본문</label>',
                              unsafe_allow_html=True)
                 if sc2.button("샘플 불러오기", key="nr-sample"):
@@ -972,8 +1072,8 @@ def new_review():
                         "최고 연 5.0% 수익을 무조건 보장해 드립니다. 업계 1위 드림은행 「드림플러스」 "
                         "적금으로 지금 바로 시작하세요. 선착순 1만 좌 한정!")
                 body = st.text_area("콘텐츠 본문", value=st.session_state.get("draft", ""),
-                                    height=220, label_visibility="collapsed",
-                                    placeholder="광고 카피·본문 텍스트를 입력하십시오")
+                                    height=238, label_visibility="collapsed",
+                                    placeholder="광고 카피 본문 텍스트를 입력하십시오")
             elif mode == "이미지":
                 st.markdown(
                     '<label class="nr-field-label">이미지 첨부 <span class="hint">음성·화면을 함께 분석합니다</span></label>',
@@ -994,10 +1094,13 @@ def new_review():
     # ── 섹션 3: 심의 강도 선택 ──
     with st.container(border=False, key="nr-sec-3"):
         st.markdown(
-            '<div style="font-size:17px;font-weight:850;color:#111827;margin-bottom:6px;">'
-            '3. 심의 강도 선택'
-            '<span style="color:#8b95a1;font-size:12px;font-weight:500;margin-left:8px;">'
-            '활용 기준의 엄격도를 선택하세요.</span></div>',
+            '<div style="display:flex;align-items:flex-start;gap:18px;margin-bottom:26px;">'
+            '<div style="width:48px;height:48px;border-radius:999px;background:#eef5ff;color:#1263ff;'
+            'display:grid;place-items:center;font-size:21px;font-weight:900;line-height:1;">3</div>'
+            '<div><div style="font-size:21px;font-weight:900;color:#111827;letter-spacing:-.035em;line-height:1.15;padding-top:10px;">'
+            '심의 강도 선택</div>'
+            '<div style="font-size:10px;font-weight:500;color:#657389;margin-top:14px;">'
+            '활용 기준의 엄격도를 선택하세요.</div></div></div>',
             unsafe_allow_html=True)
         review_mode = _review_mode_selector()
 
@@ -1090,6 +1193,7 @@ _VIDEO_TPL = """
 </div>
 <script>
 const SEGS = __SEGS__;
+const IS_PROCESSING = __IS_PROCESSING__;
 const vid = document.getElementById('vid');
 const wrap = document.getElementById('segs');
 const counter = document.getElementById('scan-counter');
@@ -1175,7 +1279,9 @@ function makeFlagEl(s, i) {
   return d;
 }
 
-wrap.innerHTML = '<div style="height:100%;display:grid;place-items:center;text-align:center;color:#c4cdd9;font-size:12.5px;line-height:1.8;padding:22px;">재생하면 구간별 분석 결과가<br>실시간으로 표시됩니다.</div>';
+if (!IS_PROCESSING) {
+  wrap.innerHTML = '<div style="height:100%;display:grid;place-items:center;text-align:center;color:#c4cdd9;font-size:12.5px;line-height:1.8;padding:22px;">재생하면 구간별 분석 결과가<br>실시간으로 표시됩니다.</div>';
+}
 
 function syncFeed(t) {
   SEGS.forEach(function(s, i) {
@@ -1213,25 +1319,44 @@ vid.addEventListener('timeupdate', function(){ syncFeed(vid.currentTime); });
 
 _SKELETON_HTML = """
 <style>
-@keyframes lb-shimmer {
-  0%   { background-position: -400px 0; }
-  100% { background-position: 400px 0; }
+@keyframes lb-spin { to { transform: rotate(360deg); } }
+@keyframes lb-bar  {
+  0%   { width: 15%; }
+  50%  { width: 80%; }
+  100% { width: 15%; }
 }
-.lb-skel {
-  background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
-  background-size: 800px 100%;
-  animation: lb-shimmer 1.4s infinite linear;
-  border-radius: 6px;
+@keyframes lb-fade { 0%,100%{opacity:.35} 50%{opacity:1} }
+.lb-spin-ring {
+  width: 36px; height: 36px; border-radius: 50%;
+  border: 3px solid #e2e8f0;
+  border-top-color: #3b82f6;
+  animation: lb-spin .9s linear infinite;
 }
+.lb-progress-bar {
+  height: 3px; border-radius: 99px; background: #3b82f6;
+  animation: lb-bar 1.8s ease-in-out infinite;
+}
+.lb-step { animation: lb-fade 2s ease-in-out infinite; }
+.lb-step:nth-child(2) { animation-delay: .6s; }
+.lb-step:nth-child(3) { animation-delay: 1.2s; }
 </style>
-<div style="display:flex;flex-direction:column;gap:8px;padding:10px;">
-  <div class="lb-skel" style="height:14px;width:55%;"></div>
-  <div class="lb-skel" style="height:14px;width:80%;margin-top:4px;"></div>
-  <div class="lb-skel" style="height:14px;width:65%;margin-top:10px;"></div>
-  <div class="lb-skel" style="height:14px;width:75%;margin-top:4px;"></div>
-  <div class="lb-skel" style="height:14px;width:50%;margin-top:10px;"></div>
-  <div class="lb-skel" style="height:14px;width:70%;margin-top:4px;"></div>
-  <div style="margin-top:14px;font-size:11.5px;color:#94a3b8;text-align:center;">음성·화면 분석 및 AI 준법 심의를 진행하고 있습니다.</div>
+<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;padding:32px 20px;gap:20px;">
+  <div class="lb-spin-ring"></div>
+  <div style="width:100%;background:#f1f5f9;border-radius:99px;overflow:hidden;">
+    <div class="lb-progress-bar"></div>
+  </div>
+  <div style="font-size:13px;font-weight:700;color:#334155;text-align:center;">AI 심의 분석 중</div>
+  <div style="display:flex;flex-direction:column;gap:6px;width:100%;">
+    <div class="lb-step" style="display:flex;align-items:center;gap:8px;font-size:11.5px;color:#64748b;">
+      <span style="width:18px;height:18px;border-radius:5px;background:#eff6ff;display:flex;align-items:center;justify-content:center;font-size:10px;">🎙</span>음성 자막 추출 중…
+    </div>
+    <div class="lb-step" style="display:flex;align-items:center;gap:8px;font-size:11.5px;color:#64748b;">
+      <span style="width:18px;height:18px;border-radius:5px;background:#eff6ff;display:flex;align-items:center;justify-content:center;font-size:10px;">🖼</span>화면 프레임 분석 중…
+    </div>
+    <div class="lb-step" style="display:flex;align-items:center;gap:8px;font-size:11.5px;color:#64748b;">
+      <span style="width:18px;height:18px;border-radius:5px;background:#eff6ff;display:flex;align-items:center;justify-content:center;font-size:10px;">⚖️</span>준법 심의 판단 중…
+    </div>
+  </div>
 </div>
 """
 
@@ -1246,6 +1371,7 @@ def _video_review(rid, timeline, findings=None, is_processing=False):
     out = (_VIDEO_TPL
            .replace("__URL__", f"{API}/reviews/{rid}/media")
            .replace("__SEGS__", segs)
+           .replace("__IS_PROCESSING__", "true" if is_processing else "false")
            .replace("__FEED_INIT__", feed_content))
     components.html(out, height=440)
 
@@ -1263,19 +1389,67 @@ def detail(rid):
     high, mid = counts_of(findings)
     vlabel, vtone = ("분석 중", "slate") if is_processing else VERDICT[ai["status"]]
 
+    media = rec["media"]
     right_badge = (live_dot("AI 분석 중…") if is_processing else badge(vlabel, vtone, dot=True))
     topbar(f"준법심의 · RV-{rec['id']:04d}", title_of(rec), right_badge)
 
-    media = rec["media"]
+    # 영상 처리 중이면 로딩 화면만 단독 렌더링
+    if media == "영상" and is_processing:
+        st.markdown("""
+<style>
+@keyframes lb-spin2  { to { transform:rotate(360deg); } }
+@keyframes lb-bar2   { 0%{width:0%} 60%{width:72%} 100%{width:92%} }
+@keyframes lb-stepin { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:none} }
+</style>
+<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;
+  min-height:72vh;gap:28px;">
+
+  <div style="position:relative;width:64px;height:64px;">
+    <svg width="64" height="64" style="position:absolute;inset:0;transform:rotate(-90deg);">
+      <circle cx="32" cy="32" r="26" fill="none" stroke="#e2e8f0" stroke-width="4"/>
+      <circle cx="32" cy="32" r="26" fill="none" stroke="#3b82f6" stroke-width="4"
+        stroke-dasharray="163" stroke-dashoffset="40" stroke-linecap="round"
+        style="animation:lb-spin2 1.1s linear infinite;transform-origin:32px 32px;"/>
+    </svg>
+    <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+      font-size:11px;font-weight:800;color:#3b82f6;">AI</div>
+  </div>
+
+  <div style="text-align:center;">
+    <div style="font-size:18px;font-weight:850;color:#0f172a;letter-spacing:-.02em;margin-bottom:8px;">심의 분석 중</div>
+    <div style="font-size:13.5px;color:#94a3b8;font-weight:500;">완료까지 1~2분 소요됩니다</div>
+  </div>
+
+  <div style="width:200px;height:2px;background:#e2e8f0;border-radius:99px;overflow:hidden;">
+    <div style="height:2px;background:linear-gradient(90deg,#3b82f6,#6366f1);border-radius:99px;
+      animation:lb-bar2 8s cubic-bezier(.4,0,.2,1) forwards;"></div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:10px;width:220px;">
+    <div style="display:flex;align-items:center;gap:12px;animation:lb-stepin .4s ease both;">
+      <div style="width:6px;height:6px;border-radius:99px;background:#3b82f6;flex-shrink:0;"></div>
+      <span style="font-size:13px;color:#475569;font-weight:600;">음성 자막 추출</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px;animation:lb-stepin .4s ease .5s both;">
+      <div style="width:6px;height:6px;border-radius:99px;background:#6366f1;flex-shrink:0;"></div>
+      <span style="font-size:13px;color:#475569;font-weight:600;">화면 프레임 분석</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px;animation:lb-stepin .4s ease 1s both;">
+      <div style="width:6px;height:6px;border-radius:99px;background:#8b5cf6;flex-shrink:0;"></div>
+      <span style="font-size:13px;color:#475569;font-weight:600;">AI 준법 심의 판단</span>
+    </div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+        _time.sleep(3)
+        st.rerun()
+        return
+
     if media == "영상":
         st.markdown('<div style="font-size:14.5px;font-weight:800;color:#0f1b2d;margin-bottom:10px;">영상 미리보기 · 실시간 위반 감지</div>', unsafe_allow_html=True)
-        timeline = [] if is_processing else (ai.get("timeline") or [])
-        _video_review(rec["id"], timeline, findings=findings, is_processing=is_processing)
+        timeline = ai.get("timeline") or []
+        _video_review(rec["id"], timeline, findings=findings, is_processing=False)
         st.markdown('<div style="height:8px;"></div>', unsafe_allow_html=True)
-        if is_processing:
-            _time.sleep(3)
-            st.rerun()
-            return
 
     left, right = st.columns([1.15, 0.85])
 

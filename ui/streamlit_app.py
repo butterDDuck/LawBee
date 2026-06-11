@@ -541,32 +541,32 @@ section[data-testid="stSidebar"] [data-testid="stSidebarUserContent"]{padding-to
 
 /* ── 파일 업로더 ── */
 [data-testid="stFileUploaderDropzone"]{
-  position:relative !important;flex-direction:column !important;gap:16px !important;
+  position:relative !important;flex-direction:column !important;gap:10px !important;
   border:2px dashed #dde4ee !important;border-radius:14px !important;
-  background:#fafbfd !important;padding:58px 24px 34px !important;
-  min-height:210px !important;display:flex !important;align-items:center !important;
+  background:#fafbfd !important;padding:28px 24px 22px !important;
+  min-height:150px !important;display:flex !important;align-items:center !important;
   justify-content:center !important;}
 [data-testid="stFileUploaderDropzone"]:hover{
   border-color:#2563eb !important;background:#f0f5ff !important;}
 [data-testid="stFileUploaderDropzone"] button{
-  width:64px !important;height:64px !important;min-height:64px !important;padding:0 !important;
-  border:none !important;border-radius:18px !important;background:#fff !important;
-  box-shadow:0 10px 28px rgba(15,23,42,.08) !important;font-size:0 !important;
+  width:44px !important;height:44px !important;min-height:44px !important;padding:0 !important;
+  border:none !important;border-radius:13px !important;background:#fff !important;
+  box-shadow:0 6px 18px rgba(15,23,42,.08) !important;font-size:0 !important;
   display:grid !important;place-items:center !important;}
 [data-testid="stFileUploaderDropzone"] button *,
 [data-testid="stFileUploaderDropzone"] button svg,
 [data-testid="stFileUploaderDropzone"] button span{
   display:none !important;}
 [data-testid="stFileUploaderDropzone"] button::before{
-  content:"";display:block;width:34px;height:34px;background-repeat:no-repeat;
-  background-position:center;background-size:34px 34px;
+  content:"";display:block;width:24px;height:24px;background-repeat:no-repeat;
+  background-position:center;background-size:24px 24px;
   background-image:url("data:image/svg+xml,%3Csvg width='34' height='34' viewBox='0 0 34 34' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M17 22V8m0 0l-6 6m6-6l6 6' fill='none' stroke='%238b95a1' stroke-width='2.7' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M9 21v4.5A2.5 2.5 0 0011.5 28h11a2.5 2.5 0 002.5-2.5V21' fill='none' stroke='%238b95a1' stroke-width='2.7' stroke-linecap='round'/%3E%3C/svg%3E");}
 [data-testid="stFileUploaderDropzone"]::after{
   content:"파일을 끌어다 놓거나 클릭해서 업로드\\A MP4 · MOV · WEBM · 음성파일 · 최대 200MB";
   white-space:pre;text-align:center;line-height:1.6;
-  color:#8b95a1;font-size:15px;font-weight:650;}
+  color:#8b95a1;font-size:12px;font-weight:600;}
 [data-testid="stFileUploaderDropzone"]::first-line{
-  color:#111827;font-size:17px;font-weight:850;}
+  color:#374151;font-size:13px;font-weight:750;}
 [data-testid="stFileUploaderDropzone"] small,
 [data-testid="stFileUploaderDropzone"] [data-testid="stMarkdownContainer"] p,
 [data-testid="stFileUploaderDropzone"] [data-testid="stFileUploaderDropzoneInstructions"],

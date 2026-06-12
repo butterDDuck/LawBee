@@ -1610,6 +1610,15 @@ def detail(rid):
             st.rerun()
             return
 
+        # 텍스트 원본 미리보기 — AI 결과 카드 위에 표시
+        if media not in ("이미지", "영상"):
+            st.markdown(
+                '<div class="lb-anim" style="background:#fff;border:1px solid #e6eaf1;border-radius:14px;'
+                'padding:18px 22px;box-shadow:0 1px 2px rgba(16,24,40,.04);margin-bottom:12px;">'
+                '<div style="font-size:11px;font-weight:700;color:#94a3b8;letter-spacing:.05em;margin-bottom:10px;">본문 카피 · 위반 문구 하이라이트</div>'
+                f'<p style="margin:0;font-size:15px;line-height:1.95;color:#27364e;word-break:keep-all;">{highlight(rec["content"], ai["rule_hits"])}</p>'
+                '</div>', unsafe_allow_html=True)
+
         # AI 1차 심의 결과 카드
         score = ai_score(ai)
         summary_full = html.escape(ai["summary"])
@@ -1668,15 +1677,6 @@ def detail(rid):
             f'</div>'
             '</div>',
             unsafe_allow_html=True)
-
-        # 텍스트 원본 미리보기 — AI 결과 카드 바로 아래 표시
-        if media not in ("이미지", "영상"):
-            st.markdown(
-                '<div class="lb-anim" style="background:#fff;border:1px solid #e6eaf1;border-radius:14px;'
-                'padding:18px 22px;box-shadow:0 1px 2px rgba(16,24,40,.04);margin-top:12px;">'
-                '<div style="font-size:11px;font-weight:700;color:#94a3b8;letter-spacing:.05em;margin-bottom:10px;">본문 카피 · 위반 문구 하이라이트</div>'
-                f'<p style="margin:0;font-size:15px;line-height:1.95;color:#27364e;word-break:keep-all;">{highlight(rec["content"], ai["rule_hits"])}</p>'
-                '</div>', unsafe_allow_html=True)
 
         # finding별 타임스탬프 매핑 (영상만)
         timeline_segs = ai.get("timeline") or [] if media == "영상" else []

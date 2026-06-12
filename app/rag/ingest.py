@@ -1,6 +1,7 @@
 """규제 데이터 적재 파이프라인
 
-data/regulations.jsonl  →  OpenAI 임베딩  →  FAISS 벡터스토어 저장
+data/regulations.jsonl (요약 청크) + doc/*.doc (법령 원문)
+  →  OpenAI 임베딩  →  FAISS 벡터스토어 저장
 
 실행:
     python -m app.rag.ingest
@@ -13,6 +14,7 @@ from langchain_openai import OpenAIEmbeddings
 from langchain_community.vectorstores import FAISS
 
 from app.config import settings
+from app.rag.law_loader import load_laws
 
 
 def load_chunks(path: str) -> list[Document]:
@@ -52,7 +54,13 @@ def build() -> None:
         raise SystemExit("OPENAI_API_KEY 가 설정되지 않았습니다. .env 를 확인하세요.")
 
     docs = load_chunks(settings.data_path)
-    print(f"[ingest] {len(docs)}개 청크 로드 완료 → 임베딩 시작...")
+    print(f"[ingest] 요약 청크 {len(docs)}개 로드 완료")
+
+    law_docs = load_laws(settings.laws_dir)
+    print(f"[ingest] 법령 원문 청크 {len(law_docs)}개 로드 완료")
+
+    docs += law_docs
+    print(f"[ingest] 총 {len(docs)}개 청크 → 임베딩 시작...")
 
     embeddings = OpenAIEmbeddings(
         model=settings.openai_embed_model,

@@ -9,11 +9,12 @@ from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
 
 from app.config import settings
+from app.rag.law_loader import load_laws
 
 
 @lru_cache(maxsize=1)
 def _load_docs() -> list[Document]:
-    """regulations.jsonl → Document 리스트"""
+    """regulations jsonl + doc/ 법령 원문 → Document 리스트 (BM25·FAISS 공용 코퍼스)"""
     docs = []
     with open(settings.data_path, encoding="utf-8") as f:
         for line in f:
@@ -36,6 +37,8 @@ def _load_docs() -> list[Document]:
                     },
                 )
             )
+    # 법령 원문 청크도 동일 코퍼스에 포함 — 벡터스토어(ingest)와 구성이 일치해야 함
+    docs.extend(load_laws(settings.laws_dir))
     return docs
 
 

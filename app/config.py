@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     openai_stt_model: str = "whisper-1"
 
     data_path: str = "data/regulations_merged.jsonl"
+    laws_dir: str = "doc"
     vectorstore_dir: str = "vectorstore"
     db_path: str = "lawbee.db"
     uploads_dir: str = "var/uploads"

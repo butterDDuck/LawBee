@@ -55,7 +55,10 @@ def api_list():
 
 
 def api_get(rid):
-    return requests.get(f"{API}/reviews/{rid}", timeout=60).json()
+    resp = requests.get(f"{API}/reviews/{rid}", timeout=60)
+    if resp.status_code == 404:
+        return None
+    return resp.json()
 
 
 def api_create(content, media, title=None, review_mode="표준"):
@@ -1475,6 +1478,11 @@ def detail(rid):
         unsafe_allow_html=True,
     )
     rec = api_get(rid)
+    if not rec:
+        st.error("심의 건을 찾을 수 없습니다.")
+        if st.button("목록으로 돌아가기"):
+            go("list")
+        return
     is_processing = rec.get("decision_status") == "처리중"
     ai = rec["ai_result"]
     findings = [] if is_processing else build_findings(ai)

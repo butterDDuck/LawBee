@@ -39,13 +39,22 @@ def init_db() -> None:
             )
             """
         )
+        # 기존 DB 마이그레이션 — 컬럼 추가
+        for col_ddl in ["ALTER TABLE reviews ADD COLUMN title TEXT",
+                         "ALTER TABLE reviews ADD COLUMN review_mode TEXT NOT NULL DEFAULT '표준'"]:
+            try:
+                c.execute(col_ddl)
+            except sqlite3.OperationalError:
+                pass
 
 
 def _to_record(row: sqlite3.Row) -> ReviewRecord:
     return ReviewRecord(
         id=row["id"],
         content=row["content"],
+        title=row["title"],
         media=row["media"],
+        review_mode=row["review_mode"] if "review_mode" in row.keys() else "표준",
         decision_status=row["decision_status"],
         ai_result=ReviewResult.model_validate_json(row["ai_result"]),
         comment=row["comment"],
@@ -55,17 +64,57 @@ def _to_record(row: sqlite3.Row) -> ReviewRecord:
     )
 
 
-def create_review(content: str, media: str | None = None) -> ReviewRecord:
+def create_review(content: str, media: str | None = None, title: str | None = None,
+                  review_mode: str = "표준") -> ReviewRecord:
     """콘텐츠 제출 → AI 1차 심의 실행 → 대기 상태로 저장"""
-    result = run_review(content, media=media)
+    result = run_review(content, media=media, review_mode=review_mode)
     init_db()
     with _conn() as c:
         cur = c.execute(
-            "INSERT INTO reviews (content, media, ai_result, created_at) VALUES (?, ?, ?, ?)",
-            (content, media, result.model_dump_json(), _now()),
+            "INSERT INTO reviews (content, title, media, review_mode, ai_result, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (content, title, media, review_mode, result.model_dump_json(), _now()),
         )
         review_id = cur.lastrowid
     return get_review(review_id)
+
+
+def create_with_result(content: str, media: str, result: ReviewResult, title: str | None = None,
+                       review_mode: str = "표준") -> ReviewRecord:
+    """사전 계산된 심의 결과로 대기 상태 저장 (멀티모달 등 전처리가 필요한 경우)"""
+    init_db()
+    with _conn() as c:
+        cur = c.execute(
+            "INSERT INTO reviews (content, title, media, review_mode, ai_result, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (content, title, media, review_mode, result.model_dump_json(), _now()),
+        )
+        review_id = cur.lastrowid
+    return get_review(review_id)
+
+
+_PENDING_RESULT = ReviewResult(status="통과", summary="__처리중__", rule_hits=[], violations=[], citations=[])
+
+
+def create_pending(content: str, media: str, title: str | None = None,
+                   review_mode: str = "표준") -> ReviewRecord:
+    """즉시 반환용 레코드 생성 — 분석 완료 전 '처리중' 상태로 저장"""
+    init_db()
+    with _conn() as c:
+        cur = c.execute(
+            "INSERT INTO reviews (content, title, media, review_mode, ai_result, decision_status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (content, title, media, review_mode, _PENDING_RESULT.model_dump_json(), "처리중", _now()),
+        )
+        review_id = cur.lastrowid
+    return get_review(review_id)
+
+
+def update_ai_result(review_id: int, result: ReviewResult) -> None:
+    """분석 완료 후 ai_result 갱신 및 decision_status를 '대기'로 전환"""
+    init_db()
+    with _conn() as c:
+        c.execute(
+            "UPDATE reviews SET ai_result = ?, decision_status = '대기' WHERE id = ?",
+            (result.model_dump_json(), review_id),
+        )
 
 
 def list_reviews(status: DecisionStatus | None = None) -> list[ReviewRecord]:
@@ -87,6 +136,14 @@ def get_review(review_id: int) -> ReviewRecord | None:
     with _conn() as c:
         row = c.execute("SELECT * FROM reviews WHERE id = ?", (review_id,)).fetchone()
     return _to_record(row) if row else None
+
+
+def delete_review(review_id: int) -> bool:
+    """심의 건 삭제, 삭제 성공 여부 반환"""
+    init_db()
+    with _conn() as c:
+        cur = c.execute("DELETE FROM reviews WHERE id = ?", (review_id,))
+    return cur.rowcount > 0
 
 
 def decide(

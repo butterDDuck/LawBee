@@ -6,8 +6,11 @@ from pydantic import BaseModel, Field
 # AI 심의 판정 상태
 Status = Literal["위반", "주의", "통과"]
 
-# 준법관리자 결재 상태
-DecisionStatus = Literal["대기", "승인", "조건부승인", "반려"]
+# 준법관리자 결재 상태 ("처리중"은 영상 분석 완료 전 임시 상태)
+DecisionStatus = Literal["대기", "승인", "조건부승인", "반려", "처리중"]
+
+# 심의 강도
+ReviewMode = Literal["강화", "표준", "완화", "AI추천"]
 
 
 class ReviewRequest(BaseModel):
@@ -15,6 +18,8 @@ class ReviewRequest(BaseModel):
 
     content: str = Field(..., description="심의 대상 마케팅 콘텐츠 원문")
     media: str | None = Field(None, description="콘텐츠 매체: 텍스트 | 영상 | UI")
+    title: str | None = Field(None, description="콘텐츠 제목")
+    review_mode: ReviewMode = Field("표준", description="심의 강도: 강화 | 표준 | 완화 | AI추천")
 
 
 class RuleHit(BaseModel):
@@ -24,6 +29,7 @@ class RuleHit(BaseModel):
     category: str = Field(..., description="위반 의심 유형")
     severity: Literal["high", "medium"] = Field(..., description="심각도")
     message: str = Field(..., description="탐지 사유")
+    basis: str = Field("", description="해당 룰의 근거 법령·규정")
 
 
 class Citation(BaseModel):
@@ -51,6 +57,18 @@ class Judgment(BaseModel):
     violations: list[Violation] = Field(default_factory=list)
 
 
+class TimelineSegment(BaseModel):
+    """영상 자막 구간 (위반 문구 타임스탬프 매핑)"""
+
+    start: float = Field(..., description="시작 시각(초)")
+    end: float = Field(..., description="종료 시각(초)")
+    text: str = Field(..., description="구간 자막 또는 화면 텍스트")
+    flagged: bool = Field(False, description="위반 문구 포함 여부")
+    terms: list[str] = Field(default_factory=list, description="구간에서 탐지된 위반 문구")
+    kind: str = Field("음성", description="음성 | 화면")
+    severity: str = Field("", description="high | medium | 빈값(통과)")
+
+
 class ReviewResult(BaseModel):
     """심의 파이프라인 최종 반환값"""
 
@@ -60,6 +78,8 @@ class ReviewResult(BaseModel):
     violations: list[Violation] = Field(default_factory=list)
     citations: list[Citation] = Field(default_factory=list)
     alternative_text: str | None = Field(None, description="위반 시 제안하는 대안 문구")
+    auto_fix_failed: bool = Field(False, description="대안 문구 자동 수정 최대 재시도 초과 여부")
+    timeline: list[TimelineSegment] = Field(default_factory=list, description="영상 구간별 위반 타임라인")
 
 
 class DecisionRequest(BaseModel):
@@ -75,7 +95,9 @@ class ReviewRecord(BaseModel):
 
     id: int
     content: str
+    title: str | None = None
     media: str | None = None
+    review_mode: ReviewMode = "표준"
     decision_status: DecisionStatus = "대기"
     ai_result: ReviewResult
     comment: str = ""

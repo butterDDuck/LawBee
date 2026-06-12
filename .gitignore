@@ -7,6 +7,8 @@ venv/
 
 # Env / secrets
 .env
+*.pem
+*.key
 
 # Vector store (생성물 — 재생성 가능)
 vectorstore/

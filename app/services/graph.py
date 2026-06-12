@@ -78,8 +78,20 @@ class State(TypedDict, total=False):
 
 @lru_cache(maxsize=1)
 def _llm() -> ChatOpenAI:
+    """대안 문구 생성용 — 비용 우선 모델"""
     return ChatOpenAI(
         model=settings.openai_chat_model,
+        api_key=settings.openai_api_key,
+        temperature=0,
+        max_retries=6,
+    )
+
+
+@lru_cache(maxsize=1)
+def _judge_llm() -> ChatOpenAI:
+    """심의·재심의 판단용 — 정확도 우선 모델"""
+    return ChatOpenAI(
+        model=settings.openai_judge_model,
         api_key=settings.openai_api_key,
         temperature=0,
         max_retries=6,
@@ -93,12 +105,38 @@ def rule_node(state: State) -> State:
     return {"rule_hits": apply_rules(state["content"])}
 
 
+def _dedup_by_id(chunks: list[dict], cap: int = 14) -> list[dict]:
+    """id 기준 중복 제거 — 앞쪽(집중 검색 결과) 우선, 최대 cap 개"""
+    seen: set = set()
+    out: list[dict] = []
+    for c in chunks:
+        cid = c.get("id")
+        if cid in seen:
+            continue
+        seen.add(cid)
+        out.append(c)
+        if len(out) >= cap:
+            break
+    return out
+
+
 def retrieve_node(state: State) -> State:
-    """콘텐츠와 룰 탐지 유형을 합쳐 관련 규제 조항 검색"""
-    hit_terms = " ".join(h.category for h in state.get("rule_hits", []))
-    query = f"{state['content']} {hit_terms}".strip()
-    chunks = search(query, k=8, media=state.get("media"))
-    return {"retrieved": chunks, "needs_reretrieval": False}
+    """위반 유형별 집중 검색 + 콘텐츠 전반 검색을 병합
+    단일 쿼리로 여러 위반의 정답 조항을 담기엔 신호가 희석되므로,
+    룰 탐지 유형마다 별도 검색해 각 위반의 정답 조항을 top 으로 확보"""
+    rule_hits = state.get("rule_hits", [])
+    media = state.get("media")
+    chunks: list[dict] = []
+    seen_cats: set = set()
+    for h in rule_hits:
+        if h.category in seen_cats or len(seen_cats) >= 6:
+            continue
+        seen_cats.add(h.category)
+        chunks += search(f"{h.category} {h.term} {h.message}", k=2, media=media,
+                         boost_terms=[h.category, h.term])
+    # 콘텐츠 전반 검색 — 룰이 못 잡은 시각·해석형 위반 대비
+    chunks += search(state["content"], k=6, media=media)
+    return {"retrieved": _dedup_by_id(chunks), "needs_reretrieval": False}
 
 
 def _format_context(chunks: list[dict]) -> str:
@@ -167,7 +205,7 @@ def judge_node(state: State) -> State:
         f"[룰 엔진 탐지 결과]\n{rule_summary}\n\n"
         f"[관련 규제 조항]\n{_format_context(chunks)}"
     )
-    judgment = _llm().with_structured_output(Judgment).invoke(
+    judgment = _judge_llm().with_structured_output(Judgment).invoke(
         [("system", _judge_prompt(mode)), ("human", human)]
     )
     return {"judgment": judgment}
@@ -191,10 +229,16 @@ def reflect_node(state: State) -> State:
 def reretrieval_node(state: State) -> State:
     """[개선] 위반 유형 키워드로 규제 조항을 보강 검색"""
     judgment = state["judgment"]
-    violation_terms = " ".join(v.type for v in judgment.violations)
-    query = f"{state['content']} {violation_terms}".strip()
-    chunks = search(query, k=8, media=state.get("media"))
-    return {"retrieved": chunks}
+    media = state.get("media")
+    chunks: list[dict] = []
+    seen: set = set()
+    for v in judgment.violations:
+        if v.type in seen or len(seen) >= 6:
+            continue
+        seen.add(v.type)
+        chunks += search(f"{v.type} {v.reason}", k=3, media=media, boost_terms=[v.type])
+    chunks += search(state["content"], k=4, media=media)
+    return {"retrieved": _dedup_by_id(chunks)}
 
 
 def alternative_node(state: State) -> State:
@@ -223,13 +267,21 @@ def alternative_node(state: State) -> State:
         "③ '누구나', '무조건', '반드시' 등 단정·보편 표현 대신 조건·가능성을 명확히 서술하세요.\n"
         "④ '업계 1위', '최고', '최저' 등 최상급 표현은 삭제하거나 객관적 근거와 함께 표기하세요.\n"
         "⑤ 적금·예금은 투자성 상품이 아니므로 '수익률 목표', '기대수익' 등 투자성 오인 표현을 사용하지 마세요.\n"
-        "⑥ '선착순', '한정' 등 긴박성·희소성 표현은 실제 조건이 있을 때만 허용되며, 없으면 삭제하세요.\n\n"
+        "⑥ '선착순', '한정' 등 긴박성·희소성 표현은 실제 조건이 있을 때만 허용되며, 없으면 삭제하세요.\n"
+        "⑦ 유리한 조건(금리·혜택)을 부각할 때는 상응하는 불리한 조건(달성 조건·제한·중도해지 불이익 등)을 "
+        "동등한 비중으로 병기하세요. 유리한 조건만 강조하고 불리한 조건을 축소·누락하면 부당광고입니다 (감독규정 제19조).\n"
+        "⑧ '타사 대비', '경쟁사보다', '업계 평균보다 낮은', '경쟁력 있는' 등 비교·우위 표현은 "
+        "비교대상·기준·출처(조사기관·기준일)를 명시할 수 있을 때만 쓰고, 없으면 삭제하세요 "
+        "(표시광고법 제3조, 금소법 제21조 제3호).\n\n"
         "【대안 문구 예시】\n"
         "원문: '누구나 연 5.0% 우대금리 적용'\n"
         "→ '연 5.0%(세전, 우대금리 포함 / 기본금리 연 3.5% + 우대금리 연 1.5%, "
         "우대금리는 급여이체 등록 시 적용)이며, 실제 적용 금리는 가입 조건에 따라 달라질 수 있습니다.'\n\n"
         "원문: '확정 수익 연 8% 적금'\n"
-        "→ '연 최고 8%(세전) / 우대금리 조건 충족 시 적용되며, 중도 해지 시 금리가 달라질 수 있습니다.'"
+        "→ '연 최고 8%(세전) / 우대금리 조건 충족 시 적용되며, 중도 해지 시 금리가 달라질 수 있습니다.'\n\n"
+        "원문: '타사 대비 수수료 50% 저렴, 업계 평균보다 낮은 금리'\n"
+        "→ '타행 이체 수수료 면제 혜택을 제공합니다(면제 조건: 월 1회 이상 급여이체). "
+        "적용 금리는 가입 기간·조건에 따라 달라질 수 있습니다.' (객관적 출처 없는 비교·우위 표현은 제외)"
         + feedback_section
     )
 
@@ -255,7 +307,7 @@ def re_judge_node(state: State) -> State:
         f"[심의 대상 콘텐츠 — AI가 수정 제안한 대안 문구]\n{state['alternative']}\n\n"
         f"[관련 규제 조항]\n{_format_context(chunks)}"
     )
-    alt_judgment = _llm().with_structured_output(Judgment).invoke(
+    alt_judgment = _judge_llm().with_structured_output(Judgment).invoke(
         [("system", _judge_prompt(mode)), ("human", human)]
     )
     return {"alt_judgment": alt_judgment}

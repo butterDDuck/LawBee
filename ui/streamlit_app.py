@@ -9,10 +9,15 @@ API_BASE_URL 환경변수로 API 주소를 지정 (기본 http://127.0.0.1:8000)
 import html
 import json
 import os
+import sys
 
 import requests
 import streamlit as st
 import streamlit.components.v1 as components
+
+# streamlit run 은 ui/ 를 sys.path[0] 으로 두므로 레포 루트를 추가해 app 패키지 import 보장
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from app.rules.lexicon import CATEGORY_BASIS  # 룰 카테고리 → 정답 조항 결정론적 매핑
 
 API = os.environ.get("API_BASE_URL", "http://127.0.0.1:8000")
 PUBLIC_API = os.environ.get("PUBLIC_API_URL", API)
@@ -55,10 +60,7 @@ def api_list():
 
 
 def api_get(rid):
-    resp = requests.get(f"{API}/reviews/{rid}", timeout=60)
-    if resp.status_code == 404:
-        return None
-    return resp.json()
+    return requests.get(f"{API}/reviews/{rid}", timeout=60).json()
 
 
 def api_create(content, media, title=None, review_mode="표준"):
@@ -103,31 +105,50 @@ def build_findings(ai):
     rank = {"high": 2, "mid": 1}
     by_cat: dict[str, dict] = {}
 
-    def ensure(cat):
-        if cat not in by_cat:
-            by_cat[cat] = {"cat": cat, "sev": "mid", "phrases": [], "issue": "", "rule": ""}
+    def resolve(cat):
+        """카테고리 항목 확보 — 기존 항목과 포함관계(한쪽이 다른 쪽을 포함)면 같은 위반으로 병합
+        LLM이 룰보다 위반명을 길게(…표현/…문구) 붙여 생기는 중복 카드를 방지"""
+        if cat in by_cat:
+            return by_cat[cat]
+        nc = cat.replace(" ", "")
+        for key, f in by_cat.items():
+            nk = key.replace(" ", "")
+            short = min(nk, nc, key=len)
+            if len(short) >= 4 and (nk in nc or nc in nk):
+                return f
+        by_cat[cat] = {"cat": cat, "sev": "mid", "phrases": [], "issue": "", "rule": ""}
         return by_cat[cat]
 
     for h in ai["rule_hits"]:
-        f = ensure(h["category"])
+        f = resolve(h["category"])
         sev = "high" if h["severity"] == "high" else "mid"
         if rank[sev] > rank[f["sev"]]:
             f["sev"] = sev
         if h["term"] not in f["phrases"]:
             f["phrases"].append(h["term"])
         f["issue"] = f["issue"] or h["message"]
-        f["rule"] = f["rule"] or "룰 엔진 1차 탐지"
+        # 룰 카테고리는 검증된 정답 조항을 직접 매핑하고, LLM 인용이 덮지 못하게 고정
+        cite = CATEGORY_BASIS.get(h["category"]) or h.get("basis")
+        if cite:
+            f["rule"] = cite
+            f["rule_fixed"] = True
+        else:
+            f["rule"] = f["rule"] or "룰 엔진 1차 탐지"
 
     cmap = {c["id"]: c for c in ai["citations"]}
     vsev = "high" if ai["status"] == "위반" else "mid"
     for v in ai["violations"]:
-        f = ensure(v["type"])
+        f = resolve(v["type"])
         if rank[vsev] > rank[f["sev"]]:
             f["sev"] = vsev
         f["issue"] = v["reason"]  # LLM 설명을 우선
         rule = "; ".join(f"{cmap[i]['law']} {cmap[i]['article']}" for i in v["citation_ids"] if i in cmap)
-        if rule:
+        if rule and not f.get("rule_fixed"):  # 룰 고정 인용이 없을 때만 LLM 인용 사용
             f["rule"] = rule
+
+    # 최후 폴백 — 근거 규정이 끝까지 비면 AI 판단으로 표기 (빈 "근거 규정 ·" 방지)
+    for f in by_cat.values():
+        f["rule"] = f["rule"] or "AI 심의 판단"
 
     return list(by_cat.values())
 
@@ -633,6 +654,19 @@ a.lb-row:hover{background:#f8fafe;}
 .lb-kpi:hover{transform:translateY(-1px);box-shadow:0 10px 22px rgba(16,24,40,.06);border-color:#d7e2f2 !important;}
 .lb-finding{transition:all .15s ease;}
 .lb-finding:hover{transform:translateY(-1px);box-shadow:0 5px 16px rgba(16,24,40,.08);}
+.lb-ts{transition:background .12s ease,box-shadow .12s ease;}
+.lb-ts:hover{background:#dbeafe !important;box-shadow:0 2px 6px rgba(37,99,235,.18);}
+.lb-ts:active{transform:translateY(.5px);}
+/* 타임스탬프 더보기 토글 — display:contents 로 칩들이 같은 플렉스에 이어지게 */
+.lb-ts-d{display:contents;}
+.lb-ts-d>summary{list-style:none;cursor:pointer;font-family:ui-monospace,monospace;font-size:10.5px;
+  font-weight:700;color:#64748b;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:5px;
+  padding:2px 8px;display:inline-flex;align-items:center;gap:3px;transition:background .12s;}
+.lb-ts-d>summary:hover{background:#e2e8f0;}
+.lb-ts-d>summary::-webkit-details-marker{display:none;}
+.lb-ts-d>summary .ts-open{display:none;}
+.lb-ts-d[open]>summary .ts-open{display:inline;}
+.lb-ts-d[open]>summary .ts-closed{display:none;}
 </style>
 """
 
@@ -1407,6 +1441,32 @@ vid.addEventListener('seeked', function(){
 });
 vid.addEventListener('timeupdate', function(){ syncFeed(vid.currentTime); });
 
+// 발견 항목 카드의 타임스탬프(▶ mm:ss) 클릭 → 해당 시각으로 이동 후 재생
+function lbSeekTo(t) {
+  if (!vid || isNaN(t)) return;
+  try { if (window.frameElement) window.frameElement.scrollIntoView({behavior:'smooth', block:'center'}); } catch(e) {}
+  var go = function(){
+    try {
+      vid.currentTime = t;
+      var p = vid.play();
+      if (p && typeof p.catch === 'function') p.catch(function(){});
+    } catch(e) {}
+  };
+  if (vid.readyState >= 1) go();
+  else vid.addEventListener('loadedmetadata', go, { once: true });
+}
+function lbHandleHash() {
+  try {
+    var m = (window.parent.location.hash || '').match(/lbseek=([0-9.]+)/);
+    if (!m) return;
+    lbSeekTo(parseFloat(m[1]));
+    // 같은 타임스탬프 재클릭도 매번 동작하도록 해시 제거 (스크롤 점프 없이)
+    var loc = window.parent.location;
+    window.parent.history.replaceState(null, '', loc.pathname + loc.search);
+  } catch(e) {}
+}
+try { window.parent.addEventListener('hashchange', lbHandleHash); } catch(e) {}
+lbHandleHash();
 
 </script>
 """
@@ -1478,11 +1538,6 @@ def detail(rid):
         unsafe_allow_html=True,
     )
     rec = api_get(rid)
-    if not rec:
-        st.error("심의 건을 찾을 수 없습니다.")
-        if st.button("목록으로 돌아가기"):
-            go("list")
-        return
     is_processing = rec.get("decision_status") == "처리중"
     ai = rec["ai_result"]
     findings = [] if is_processing else build_findings(ai)
@@ -1703,15 +1758,21 @@ def detail(rid):
             m, s = int(t) // 60, int(t) % 60
             return f"{m:02d}:{s:02d}"
         def finding_timestamps(f):
-            """finding의 phrases가 등장하는 타임라인 구간 시작 시각 목록"""
+            """finding이 등장하는 타임라인 구간 시작 시각 목록
+            음성 구간은 위반 문구(phrases)로, 화면 구간은 시각 위반 카테고리로 매칭"""
             ts = []
+            cat_l = (f.get("cat") or "").lower()
+            phrases_l = [p.lower() for p in f.get("phrases", [])]
             for seg in timeline_segs:
                 if not seg.get("flagged"): continue
                 seg_terms = [t.lower() for t in seg.get("terms", [])]
-                for phrase in f.get("phrases", []):
-                    if phrase.lower() in seg_terms or phrase.lower() in seg.get("text", "").lower():
-                        ts.append(seg["start"])
-                        break
+                seg_text = (seg.get("text") or "").lower()
+                hit = any(p and (p in seg_terms or p in seg_text) for p in phrases_l)
+                # 화면 구간 terms 는 시각 위반 카테고리이므로 finding 카테고리로 매칭
+                if not hit and cat_l:
+                    hit = any(cat_l == t or cat_l in t or t in cat_l for t in seg_terms)
+                if hit:
+                    ts.append(seg["start"])
             return sorted(set(ts))
 
         # 발견 항목
@@ -1724,11 +1785,27 @@ def detail(rid):
             timestamps = finding_timestamps(f)
             ts_html = ""
             if timestamps:
-                chips = "".join(
-                    f'<span style="font-family:ui-monospace,monospace;font-size:10.5px;font-weight:700;'
-                    f'color:#2563eb;background:#eff6ff;border-radius:5px;padding:2px 7px;">{mmss(t)}</span>'
-                    for t in timestamps)
-                ts_html = f'<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:6px;">{chips}</div>'
+                def ts_chip(t):
+                    return (f'<a class="lb-ts" href="#lbseek={t:.2f}" title="영상의 {mmss(t)} 지점으로 이동" '
+                            f'style="font-family:ui-monospace,monospace;font-size:10.5px;font-weight:700;'
+                            f'color:#2563eb;background:#eff6ff;border:1px solid #dbeafe;border-radius:5px;'
+                            f'padding:2px 7px;text-decoration:none;display:inline-flex;align-items:center;gap:3px;">'
+                            f'<span style="font-size:8px;">▶</span>{mmss(t)}</a>')
+                HEAD = 4
+                if len(timestamps) <= HEAD + 1:  # 5개 이하는 전부 표시
+                    chips = "".join(ts_chip(t) for t in timestamps)
+                    ts_html = f'<div style="display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end;margin-top:6px;">{chips}</div>'
+                else:  # 너무 많으면 앞 4개 + 더보기를 한 줄에 (줄바꿈 방지), 나머지는 토글
+                    head = "".join(ts_chip(t) for t in timestamps[:HEAD])
+                    rest = "".join(ts_chip(t) for t in timestamps[HEAD:])
+                    more = len(timestamps) - HEAD
+                    ts_html = (
+                        f'<div style="display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end;align-items:center;margin-top:6px;">'
+                        f'{head}'
+                        f'<details class="lb-ts-d"><summary>'
+                        f'<span class="ts-closed">+{more} 더보기</span><span class="ts-open">접기</span></summary>'
+                        f'{rest}</details>'
+                        f'</div>')
             phrases_html = ""
             if f["phrases"]:
                 chips_str = "  ".join(
@@ -1743,8 +1820,8 @@ def detail(rid):
                 f'<span style="font-size:13px;font-weight:750;color:#0f1b2d;">{html.escape(f["cat"])}</span>'
                 f'<span style="margin-left:auto;">{ts_html}</span></div>'
                 f'{phrases_html}'
-                f'<div style="font-size:12.8px;color:#3a4a63;line-height:1.6;margin-top:6px;"><b style="color:#8593a8;">문제점</b> · {html.escape(f["issue"])}</div>'
-                f'<div style="font-size:12.5px;color:#3a4a63;margin-top:5px;"><b style="color:#8593a8;">근거 규정</b> · '
+                f'<div style="font-size:12.8px;color:#3a4a63;line-height:1.6;margin-top:6px;"><b style="color:#8593a8;font-size:13.6px;">문제점</b> · {html.escape(f["issue"])}</div>'
+                f'<div style="font-size:12.5px;color:#3a4a63;margin-top:5px;"><b style="color:#8593a8;font-size:13.6px;">근거 규정</b> · '
                 f'<span style="font-family:ui-monospace,monospace;">{html.escape(f["rule"])}</span></div></div>',
                 unsafe_allow_html=True)
 

@@ -4,7 +4,7 @@ lexicon 의 패턴으로 콘텐츠에서 정형 위반 표현을 1차 탐지
 RAG 검색만으로는 변별이 약한 단정·최상급·보편적용 표현을 확실히 잡는 역할
 """
 from app.domain.schema import RuleHit
-from app.rules.lexicon import ABSENCE_RULES, RULES
+from app.rules.lexicon import ABSENCE_RULES, CATEGORY_BASIS, RULES
 
 
 def apply_rules(content: str) -> list[RuleHit]:
@@ -25,6 +25,7 @@ def apply_rules(content: str) -> list[RuleHit]:
                     category=rule.category,
                     severity=rule.severity,
                     message=rule.message,
+                    basis=CATEGORY_BASIS.get(rule.category, ""),
                 )
             )
 
@@ -40,6 +41,7 @@ def apply_rules(content: str) -> list[RuleHit]:
                     category=rule.category,
                     severity=rule.severity,
                     message=rule.message,
+                    basis=CATEGORY_BASIS.get(rule.category, ""),
                 )
             )
 

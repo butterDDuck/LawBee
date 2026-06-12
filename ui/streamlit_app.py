@@ -1610,8 +1610,18 @@ def detail(rid):
             st.rerun()
             return
 
-        # 텍스트 원본 미리보기 — AI 결과 카드 위에 표시
-        if media not in ("이미지", "영상"):
+        # 콘텐츠 미리보기 — AI 결과 카드 위에 표시
+        if media == "이미지":
+            st.markdown(
+                f'<div style="display:flex;align-items:center;gap:9px;margin-bottom:10px;">'
+                f'<span style="font-size:13.5px;font-weight:800;color:#0f1b2d;">콘텐츠 미리보기</span>'
+                f'<span style="margin-left:auto;">{badge(f"위반 {high}", "red")} &nbsp;{badge(f"주의 {mid}", "amber")}</span></div>',
+                unsafe_allow_html=True)
+            st.image(f"{API}/reviews/{rec['id']}/media", use_container_width=True)
+            with st.expander("AI가 추출한 텍스트 보기"):
+                st.write(rec["content"])
+            st.markdown('<div style="height:4px;"></div>', unsafe_allow_html=True)
+        elif media not in ("영상",):
             st.markdown(
                 '<div class="lb-anim" style="background:#fff;border:1px solid #e6eaf1;border-radius:14px;'
                 'padding:18px 22px;box-shadow:0 1px 2px rgba(16,24,40,.04);margin-bottom:12px;">'
@@ -1780,17 +1790,7 @@ def detail(rid):
                 unsafe_allow_html=True)
 
         # 이미지·영상 미리보기 (텍스트는 위에서 이미 렌더링)
-        if media == "이미지":
-            st.markdown('<div style="height:10px;"></div>', unsafe_allow_html=True)
-            st.markdown(
-                f'<div style="display:flex;align-items:center;gap:9px;margin-bottom:10px;">'
-                f'<span style="font-size:13.5px;font-weight:800;color:#0f1b2d;">콘텐츠 미리보기</span>'
-                f'<span style="margin-left:auto;">{badge(f"위반 {high}", "red")} &nbsp;{badge(f"주의 {mid}", "amber")}</span></div>',
-                unsafe_allow_html=True)
-            st.image(f"{API}/reviews/{rec['id']}/media", use_container_width=True)
-            with st.expander("AI가 추출한 텍스트 보기"):
-                st.write(rec["content"])
-        elif media == "영상":
+        if media == "영상":
             st.markdown('<div style="height:10px;"></div>', unsafe_allow_html=True)
             st.markdown(
                 f'<div style="display:flex;align-items:center;gap:9px;margin-bottom:10px;">'

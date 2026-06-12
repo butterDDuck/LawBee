@@ -54,10 +54,15 @@ def _tokenize(text: str) -> list[str]:
 
 
 @lru_cache(maxsize=1)
+def _doc_tokens() -> list[list[str]]:
+    """문서별 형태소 토큰 — BM25·카테고리 boost 가 공유 (1회만 토크나이징)"""
+    return [_tokenize(d.page_content) for d in _load_docs()]
+
+
+@lru_cache(maxsize=1)
 def _get_bm25() -> BM25Okapi:
     """BM25 인덱스 — 형태소 분석 기반 토크나이징"""
-    docs = _load_docs()
-    return BM25Okapi([_tokenize(d.page_content) for d in docs])
+    return BM25Okapi(_doc_tokens())
 
 
 @lru_cache(maxsize=1)
@@ -86,11 +91,14 @@ def search(
     query: str,
     k: int = 5,
     media: str | None = None,
+    boost_terms: list[str] | None = None,
 ) -> list[dict]:
     """Hybrid(BM25+FAISS) → RRF → media 필터 → top-k 반환
 
     media: '텍스트' | '영상' | 'UI' — 해당 매체 또는 '공통' 조항만 포함
     None 이면 필터 없이 전체 검색
+    boost_terms: 위반 유형·탐지어 등 — 형태소 토큰이 겹치는 조항을 상위로 끌어올림
+                 (KB id 의존 없는 범용 카테고리 인지 검색)
     """
     fetch_k = k * 6
     docs = _load_docs()
@@ -108,10 +116,23 @@ def search(
         if doc.page_content in doc_text_to_idx
     ]
 
-    # 3) RRF 결합 (FAISS 비중 높게 — 순위 리스트 2회 포함)
-    combined = _rrf([bm25_ranking, faiss_ranking, faiss_ranking])
+    # 3) 카테고리 boost — 위반 유형 토큰이 겹치는 조항을 별도 순위로 추가
+    rankings = [bm25_ranking, faiss_ranking, faiss_ranking]
+    if boost_terms:
+        boost_tokens: set[str] = set()
+        for t in boost_terms:
+            boost_tokens.update(_tokenize(t))
+        if boost_tokens:
+            dt = _doc_tokens()
+            overlap = [(i, len(boost_tokens & set(dt[i]))) for i in range(len(docs))]
+            boost_ranking = [i for i, c in sorted(overlap, key=lambda x: x[1], reverse=True) if c > 0]
+            if boost_ranking:
+                rankings.append(boost_ranking)
 
-    # 4) media 필터 및 결과 구성
+    # 4) RRF 결합 (FAISS 비중 높게 — 순위 리스트 2회 포함)
+    combined = _rrf(rankings)
+
+    # 5) media 필터 및 결과 구성
     results = []
     for idx in combined:
         doc = docs[idx]

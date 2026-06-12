@@ -29,6 +29,7 @@ class RuleHit(BaseModel):
     category: str = Field(..., description="위반 의심 유형")
     severity: Literal["high", "medium"] = Field(..., description="심각도")
     message: str = Field(..., description="탐지 사유")
+    basis: str = Field("", description="해당 룰의 근거 법령·규정")
 
 
 class Citation(BaseModel):

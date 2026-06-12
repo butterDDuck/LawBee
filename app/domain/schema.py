@@ -77,6 +77,7 @@ class ReviewResult(BaseModel):
     violations: list[Violation] = Field(default_factory=list)
     citations: list[Citation] = Field(default_factory=list)
     alternative_text: str | None = Field(None, description="위반 시 제안하는 대안 문구")
+    auto_fix_failed: bool = Field(False, description="대안 문구 자동 수정 최대 재시도 초과 여부")
     timeline: list[TimelineSegment] = Field(default_factory=list, description="영상 구간별 위반 타임라인")
 
 

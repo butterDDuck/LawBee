@@ -596,7 +596,8 @@ a.lb-row:hover{background:#f8fafe;}
 [class*="st-key-listcard"] [data-testid="stCheckbox"]{display:flex;align-items:center;height:64px;transform:translateY(-5px);}
 [class*="st-key-dash-filter-"] button{
   min-height:40px !important;border-radius:11px !important;padding:8px 18px !important;
-  font-size:13px !important;font-weight:850 !important;box-shadow:0 5px 14px rgba(16,24,40,.04) !important;}
+  font-size:13px !important;font-weight:850 !important;box-shadow:0 5px 14px rgba(16,24,40,.04) !important;
+  white-space:nowrap !important;}
 [class*="st-key-dash-filter-"] button[kind="secondary"]{
   background:#fff !important;border:1px solid #e6eaf1 !important;color:#344055 !important;}
 [class*="st-key-dash-filter-"] button[kind="primary"]{
@@ -800,7 +801,7 @@ def dashboard():
     st.write("")
     filter_map = {"전체": "전체", "대기": "대기", "승인": "승인", "조건부승인": "조건부승인", "반려": "반려"}
     flt = st.session_state.get("dash_filter", "전체")
-    fcols = st.columns([0.42, 0.42, 0.42, 0.64, 0.42, 4.2], gap="small")
+    fcols = st.columns([0.5, 0.5, 0.5, 0.9, 0.5, 4.2], gap="small")
     for col, label in zip(fcols[:5], filter_map):
         if col.button(label, use_container_width=True, key=f"dash-filter-{label}",
                       type="primary" if flt == filter_map[label] else "secondary"):
@@ -1610,6 +1611,25 @@ def detail(rid):
             st.rerun()
             return
 
+        # 콘텐츠 미리보기 — AI 결과 카드 위에 표시
+        if media == "이미지":
+            st.markdown(
+                f'<div style="display:flex;align-items:center;gap:9px;margin-bottom:10px;">'
+                f'<span style="font-size:13.5px;font-weight:800;color:#0f1b2d;">콘텐츠 미리보기</span>'
+                f'<span style="margin-left:auto;">{badge(f"위반 {high}", "red")} &nbsp;{badge(f"주의 {mid}", "amber")}</span></div>',
+                unsafe_allow_html=True)
+            st.image(f"{API}/reviews/{rec['id']}/media", use_container_width=True)
+            with st.expander("AI가 추출한 텍스트 보기"):
+                st.write(rec["content"])
+            st.markdown('<div style="height:4px;"></div>', unsafe_allow_html=True)
+        elif media not in ("영상",):
+            st.markdown(
+                '<div class="lb-anim" style="background:#fff;border:1px solid #e6eaf1;border-radius:14px;'
+                'padding:18px 22px;box-shadow:0 1px 2px rgba(16,24,40,.04);margin-bottom:12px;">'
+                '<div style="font-size:11px;font-weight:700;color:#94a3b8;letter-spacing:.05em;margin-bottom:10px;">본문 카피 · 위반 문구 하이라이트</div>'
+                f'<p style="margin:0;font-size:15px;line-height:1.95;color:#27364e;word-break:keep-all;">{highlight(rec["content"], ai["rule_hits"])}</p>'
+                '</div>', unsafe_allow_html=True)
+
         # AI 1차 심의 결과 카드
         score = ai_score(ai)
         summary_full = html.escape(ai["summary"])
@@ -1770,29 +1790,18 @@ def detail(rid):
                 '</div>',
                 unsafe_allow_html=True)
 
-        # 원본 미리보기
-        st.markdown('<div style="height:10px;"></div>', unsafe_allow_html=True)
-        head = "추출 자막" if media == "영상" else "콘텐츠 미리보기"
-        st.markdown(
-            f'<div style="display:flex;align-items:center;gap:9px;margin-bottom:10px;">'
-            f'<span style="font-size:13.5px;font-weight:800;color:#0f1b2d;">{head}</span>'
-            f'<span style="margin-left:auto;">{badge(f"위반 {high}", "red")} &nbsp;{badge(f"주의 {mid}", "amber")}</span></div>',
-            unsafe_allow_html=True)
-        if media == "이미지":
-            st.image(f"{API}/reviews/{rec['id']}/media", use_container_width=True)
-            with st.expander("AI가 추출한 텍스트 보기"):
-                st.write(rec["content"])
-        elif media == "영상":
+        # 이미지·영상 미리보기 (텍스트는 위에서 이미 렌더링)
+        if media == "영상":
+            st.markdown('<div style="height:10px;"></div>', unsafe_allow_html=True)
+            st.markdown(
+                f'<div style="display:flex;align-items:center;gap:9px;margin-bottom:10px;">'
+                f'<span style="font-size:13.5px;font-weight:800;color:#0f1b2d;">추출 자막</span>'
+                f'<span style="margin-left:auto;">{badge(f"위반 {high}", "red")} &nbsp;{badge(f"주의 {mid}", "amber")}</span></div>',
+                unsafe_allow_html=True)
             with st.expander("추출 자막 · 위반 문구 하이라이트 보기"):
                 st.markdown(
                     f'<p style="margin:0;font-size:14px;line-height:1.9;color:#27364e;word-break:keep-all;">{highlight(rec["content"], ai["rule_hits"])}</p>',
                     unsafe_allow_html=True)
-        else:
-            st.markdown(
-                '<div class="lb-anim" style="background:#fff;border:1px solid #e6eaf1;border-radius:14px;padding:22px 24px;box-shadow:0 1px 2px rgba(16,24,40,.04);">'
-                '<div style="font-size:11px;font-weight:700;color:#94a3b8;letter-spacing:.05em;margin-bottom:10px;">본문 카피 · 위반 문구 하이라이트</div>'
-                f'<p style="margin:0;font-size:16px;line-height:1.95;color:#27364e;word-break:keep-all;">{highlight(rec["content"], ai["rule_hits"])}</p>'
-                '</div>', unsafe_allow_html=True)
 
     # 우 — 메타 정보 + 준법관리자 결재
     with right:

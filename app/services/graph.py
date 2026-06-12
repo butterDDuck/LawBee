@@ -1,8 +1,18 @@
 """LangGraph 기반 준법심의 파이프라인
 
-흐름: 룰 엔진 → 규제 조항 검색 → LLM 판단 → (위반·주의 시) 대안 문구 생성
-노드 흐름은 LangGraph 가 제어하고, 노드 내부는 LangChain 컴포넌트를 사용
+흐름:
+  룰 엔진 → 규제 조항 검색 → LLM 판단 → [reflect: 근거 충분성 검증]
+  → (통과) END
+  → (위반·주의) 대안 문구 생성 → [re_judge: 대안 재심의]
+      → (통과) END
+      → (실패, 최대 3회) 이전 피드백 포함 대안 재생성 → 루프
+      → (3회 초과) auto_fix_failed 플래그로 END
+
+에이전트 루프: 판단(judge) → 행동(alternative) → 검증(re_judge) → 개선(alternative 재시도)
 """
+from __future__ import annotations
+
+import re as _re
 from functools import lru_cache
 from typing import TypedDict
 
@@ -19,6 +29,8 @@ from app.domain.schema import (
     ReviewResult,
     RuleHit,
 )
+
+_MAX_ALT_RETRIES = 3  # 대안 문구 재생성 최대 횟수
 
 
 _MODE_GUIDE: dict[str, str] = {
@@ -51,7 +63,17 @@ class State(TypedDict, total=False):
     rule_hits: list[RuleHit]
     retrieved: list[dict]
     judgment: Judgment
+    # reflect 노드가 판단 근거 불충분을 감지하면 True → retrieve 재실행
+    needs_reretrieval: bool
     alternative: str | None
+    # 대안 재심의 결과
+    alt_judgment: Judgment | None
+    # 대안 재생성 시 이전 실패 이유 누적
+    alt_feedback: list[str]
+    # 대안 재생성 시도 횟수
+    alt_retries: int
+    # 3회 초과 후에도 통과 못하면 True
+    auto_fix_failed: bool
 
 
 @lru_cache(maxsize=1)
@@ -76,7 +98,7 @@ def retrieve_node(state: State) -> State:
     hit_terms = " ".join(h.category for h in state.get("rule_hits", []))
     query = f"{state['content']} {hit_terms}".strip()
     chunks = search(query, k=5, media=state.get("media"))
-    return {"retrieved": chunks}
+    return {"retrieved": chunks, "needs_reretrieval": False}
 
 
 def _format_context(chunks: list[dict]) -> str:
@@ -90,33 +112,21 @@ def _format_context(chunks: list[dict]) -> str:
     return "\n\n".join(lines)
 
 
-def judge_node(state: State) -> State:
-    """규제 조항과 룰 탐지 결과를 근거로 LLM 이 위반 여부 판단"""
-    chunks = state.get("retrieved", [])
-    rule_summary = "\n".join(
-        f"- ({h.severity}) {h.category}: '{h.term}' — {h.message}"
-        for h in state.get("rule_hits", [])
-    ) or "(룰 탐지 없음)"
-
-    mode = state.get("review_mode") or "표준"
+def _judge_prompt(mode: str) -> str:
     mode_guide = _MODE_GUIDE.get(mode, _MODE_GUIDE["표준"])
-
-    system = (
+    return (
         "당신은 금융회사의 마케팅 콘텐츠를 심의하는 준법 심의역입니다. "
         "아래 제공된 규제 조항과 룰 엔진 탐지 결과만을 근거로 콘텐츠의 위반 여부를 판단하세요. "
         "근거 조항은 반드시 제공된 조항 id 중에서만 인용하고, 제공되지 않은 사실을 지어내지 마세요.\n\n"
         f"{mode_guide}\n\n"
-
         "【판정 기준】\n"
         "- 위반: 법령·감독 규정에 명백히 저촉되는 표현이 존재하는 경우\n"
         "- 주의: 위반 소지가 있으나 전체 맥락에 따라 달라질 수 있는 경우, 또는 필수 고지 누락이 의심되는 경우\n"
         "- 통과: 규제 조항에 저촉되는 표현이 없고 필수 고지가 적절히 포함된 경우\n\n"
-
         "【위반 유형명 예시 — type 필드에 사용】\n"
         "수익 보장 단정 / 원금보장 표현 / 수익률 단정 / 근거 없는 최상급 표현 / 부당 비교 / "
         "보편적용 오인 / 투자 위험 미고지 / 필수 고지 누락 / 압박형 다크패턴 / 감정적 언어 사용 / "
         "허위·과장 광고 / 부당권유\n\n"
-
         "【few-shot 판정 예시】\n"
         "예1) 콘텐츠: '연 8% 확정 수익 보장 적금'\n"
         "→ 판정: 위반 / type: 수익 보장 단정 / 이유: '확정 수익 보장'은 불확실한 사항에 대한 단정적 표현으로 "
@@ -127,46 +137,139 @@ def judge_node(state: State) -> State:
         "예3) 콘텐츠: '이 적금은 연 3.5% 금리(기본 2.5% + 우대 1.0%, 급여이체 시)이며 예금자보호법에 따라 "
         "1인당 최고 5천만원까지 보호됩니다'\n"
         "→ 판정: 통과 / 이유: 기본·우대금리 구분, 우대 조건 명시, 예금자보호 한도 고지 모두 충족\n\n"
-
         "각 위반 항목의 type 에는 심각도가 아니라 위반 유형명을 적으세요."
     )
+
+
+def judge_node(state: State) -> State:
+    """[판단] 규제 조항과 룰 탐지 결과를 근거로 LLM 이 위반 여부 판단"""
+    chunks = state.get("retrieved", [])
+    rule_summary = "\n".join(
+        f"- ({h.severity}) {h.category}: '{h.term}' — {h.message}"
+        for h in state.get("rule_hits", [])
+    ) or "(룰 탐지 없음)"
+
+    mode = state.get("review_mode") or "표준"
     human = (
         f"[심의 대상 콘텐츠]\n{state['content']}\n\n"
         f"[룰 엔진 탐지 결과]\n{rule_summary}\n\n"
         f"[관련 규제 조항]\n{_format_context(chunks)}"
     )
-
     judgment = _llm().with_structured_output(Judgment).invoke(
-        [("system", system), ("human", human)]
+        [("system", _judge_prompt(mode)), ("human", human)]
     )
     return {"judgment": judgment}
 
 
+def reflect_node(state: State) -> State:
+    """[검증] judge 판단의 근거 충분성을 자기 검증 — 조항 미인용 위반 항목이 있으면 재검색 요청"""
+    judgment = state["judgment"]
+    # 위반 항목 중 citation_ids 가 비어 있는 항목 수 계산
+    uncited = [v for v in judgment.violations if not v.citation_ids]
+    # 위반인데 인용 조항이 전혀 없으면 근거 불충분으로 판단해 재검색 요청
+    needs = (
+        judgment.status != "통과"
+        and len(uncited) > 0
+        and len(uncited) == len(judgment.violations)
+        and not state.get("needs_reretrieval")  # 무한 루프 방지: 재검색은 1회만
+    )
+    return {"needs_reretrieval": needs}
+
+
+def reretrieval_node(state: State) -> State:
+    """[개선] 위반 유형 키워드로 규제 조항을 보강 검색"""
+    judgment = state["judgment"]
+    violation_terms = " ".join(v.type for v in judgment.violations)
+    query = f"{state['content']} {violation_terms}".strip()
+    chunks = search(query, k=8, media=state.get("media"))
+    return {"retrieved": chunks}
+
+
 def alternative_node(state: State) -> State:
-    """위반·주의 콘텐츠에 대해 준법 통과 가능한 대안 문구 생성"""
+    """[행동] 위반·주의 콘텐츠에 대해 준법 통과 가능한 대안 문구 생성
+    이전 재심의 실패 피드백이 있으면 반영해 개선된 문구 재생성
+    """
     judgment = state["judgment"]
     violation_summary = "; ".join(f"{v.type}: {v.reason}" for v in judgment.violations)
+
+    # 이전 시도 피드백 누적
+    feedback_list: list[str] = state.get("alt_feedback") or []
+    feedback_section = ""
+    if feedback_list:
+        feedback_section = (
+            "\n\n【이전 시도 실패 피드백 — 반드시 반영하세요】\n"
+            + "\n".join(f"시도 {i+1}: {fb}" for i, fb in enumerate(feedback_list))
+        )
+
     system = (
         "당신은 금융 마케팅 카피라이터이자 준법 전문가입니다. "
         "원문의 마케팅 의도는 살리되, 지적된 위반 사유를 모두 해소한 대안 문구를 한국어로 작성하세요. "
         "과장·단정·보편적용 표현을 제거하고 필요한 고지를 반영하세요. 대안 문구만 출력하세요."
+        + feedback_section
     )
-    import re as _re
-    # 음성 자막 텍스트만 추출 — [화면 분석] 섹션 및 내부 레이블 제거
-    raw = state["content"]
-    voice = _re.search(r'\[음성 자막\](.*?)(?=\[화면 분석\]|$)', raw, _re.S)
-    clean_content = voice.group(1).strip() if voice else raw
+
+    voice = _re.search(r'\[음성 자막\](.*?)(?=\[화면 분석\]|$)', state["content"], _re.S)
+    clean_content = voice.group(1).strip() if voice else state["content"]
+
     human = (
         f"[원문]\n{clean_content}\n\n"
         f"[해소해야 할 위반 사유]\n{violation_summary or judgment.summary}"
     )
     resp = _llm().invoke([("system", system), ("human", human)])
-    return {"alternative": resp.content.strip()}
+    return {
+        "alternative": resp.content.strip(),
+        "alt_retries": (state.get("alt_retries") or 0) + 1,
+    }
 
 
-def _route_after_judge(state: State) -> str:
-    """통과면 종료, 그 외엔 대안 문구 생성으로 분기"""
+def re_judge_node(state: State) -> State:
+    """[검증] 대안 문구가 규정을 통과하는지 재심의"""
+    chunks = state.get("retrieved", [])
+    mode = state.get("review_mode") or "표준"
+    human = (
+        f"[심의 대상 콘텐츠 — AI가 수정 제안한 대안 문구]\n{state['alternative']}\n\n"
+        f"[관련 규제 조항]\n{_format_context(chunks)}"
+    )
+    alt_judgment = _llm().with_structured_output(Judgment).invoke(
+        [("system", _judge_prompt(mode)), ("human", human)]
+    )
+    return {"alt_judgment": alt_judgment}
+
+
+# --- 라우팅 ---
+
+def _route_after_reflect(state: State) -> str:
+    """근거 불충분이면 보강 검색 후 재판단, 아니면 다음 단계로"""
+    if state.get("needs_reretrieval"):
+        return "reretrieval"
     return "end" if state["judgment"].status == "통과" else "alternative"
+
+
+def _route_after_rejudge(state: State) -> str:
+    """대안 재심의 결과에 따라 종료 또는 재생성"""
+    alt_j = state.get("alt_judgment")
+    retries = state.get("alt_retries") or 0
+
+    if alt_j and alt_j.status == "통과":
+        return "end"
+    if retries >= _MAX_ALT_RETRIES:
+        return "give_up"
+    return "retry_alternative"
+
+
+def _collect_feedback(state: State) -> State:
+    """재생성 전 이전 실패 이유를 feedback 리스트에 추가"""
+    alt_j = state.get("alt_judgment")
+    feedback = state.get("alt_feedback") or []
+    if alt_j:
+        reasons = "; ".join(f"{v.type}: {v.reason}" for v in alt_j.violations) or alt_j.summary
+        feedback = feedback + [reasons]
+    return {"alt_feedback": feedback}
+
+
+def give_up_node(state: State) -> State:
+    """최대 재시도 초과 — 자동 수정 불가 플래그 설정"""
+    return {"auto_fix_failed": True}
 
 
 # --- 그래프 구성 ---
@@ -174,25 +277,57 @@ def _route_after_judge(state: State) -> str:
 @lru_cache(maxsize=1)
 def _compiled():
     g = StateGraph(State)
-    g.add_node("rule", rule_node)
-    g.add_node("retrieve", retrieve_node)
-    g.add_node("judge", judge_node)
-    g.add_node("alternative", alternative_node)
+
+    g.add_node("rule",         rule_node)
+    g.add_node("retrieve",     retrieve_node)
+    g.add_node("judge",        judge_node)
+    g.add_node("reflect",      reflect_node)
+    g.add_node("reretrieval",  reretrieval_node)
+    g.add_node("alternative",  alternative_node)
+    g.add_node("re_judge",     re_judge_node)
+    g.add_node("collect_fb",   _collect_feedback)
+    g.add_node("give_up",      give_up_node)
 
     g.set_entry_point("rule")
-    g.add_edge("rule", "retrieve")
-    g.add_edge("retrieve", "judge")
-    g.add_conditional_edges("judge", _route_after_judge, {"alternative": "alternative", "end": END})
-    g.add_edge("alternative", END)
+    g.add_edge("rule",        "retrieve")
+    g.add_edge("retrieve",    "judge")
+    g.add_edge("judge",       "reflect")
+
+    # reflect: 근거 불충분 → 보강 검색 후 재판단 / 통과 → END / 위반 → 대안 생성
+    g.add_conditional_edges(
+        "reflect", _route_after_reflect,
+        {"reretrieval": "reretrieval", "end": END, "alternative": "alternative"},
+    )
+    g.add_edge("reretrieval", "judge")  # 보강 검색 후 재판단
+
+    # 대안 생성 후 재심의
+    g.add_edge("alternative", "re_judge")
+
+    # 재심의: 통과 → END / 실패·재시도 → 피드백 수집 후 대안 재생성 / 포기 → give_up
+    g.add_conditional_edges(
+        "re_judge", _route_after_rejudge,
+        {"end": END, "retry_alternative": "collect_fb", "give_up": "give_up"},
+    )
+    g.add_edge("collect_fb", "alternative")  # 피드백 반영 재생성
+    g.add_edge("give_up",    END)
+
     return g.compile()
 
 
 def run_review(content: str, media: str | None = None, review_mode: str = "표준") -> ReviewResult:
     """심의 파이프라인 실행 후 구조화된 결과 반환"""
-    final: State = _compiled().invoke({"content": content, "media": media, "review_mode": review_mode})
+    final: State = _compiled().invoke(
+        {
+            "content": content,
+            "media": media,
+            "review_mode": review_mode,
+            "alt_retries": 0,
+            "alt_feedback": [],
+            "auto_fix_failed": False,
+        }
+    )
 
     judgment = final["judgment"]
-    # 판단이 인용한 조항만 근거로 정리
     cited_ids = {cid for v in judgment.violations for cid in v.citation_ids}
     citations = [
         Citation(id=c["id"], law=c["law"], article=c["article"], source_url=c.get("source_url"))
@@ -200,11 +335,16 @@ def run_review(content: str, media: str | None = None, review_mode: str = "표�
         if c["id"] in cited_ids
     ]
 
+    # 대안 문구: 재심의 통과한 버전 우선, 없으면 마지막 생성본
+    alternative_text = final.get("alternative")
+    auto_fix_failed = final.get("auto_fix_failed", False)
+
     return ReviewResult(
         status=judgment.status,
         summary=judgment.summary,
         rule_hits=final.get("rule_hits", []),
         violations=judgment.violations,
         citations=citations,
-        alternative_text=final.get("alternative"),
+        alternative_text=alternative_text,
+        auto_fix_failed=auto_fix_failed,
     )

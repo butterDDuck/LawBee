@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     openai_chat_model: str = "gpt-4o-mini"
 
     data_path: str = "data/regulations.jsonl"
+    laws_dir: str = "doc"
     vectorstore_dir: str = "vectorstore"
     db_path: str = "lawbee.db"
 

@@ -5,6 +5,7 @@ langchain-community>=0.3.0
 langgraph>=0.2.0
 faiss-cpu>=1.8.0
 openai>=1.40.0
+striprtf>=0.0.26   # 법령 원문 .doc(RTF) 파싱
 
 # --- API ---
 fastapi>=0.115.0

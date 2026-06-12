@@ -21,6 +21,7 @@ from langgraph.graph import StateGraph, END
 
 from app.config import settings
 from app.rules import apply_rules
+from app.rules.lexicon import CATEGORY_BASIS
 from app.rag.retriever import search
 from app.domain.schema import (
     Citation,
@@ -194,9 +195,15 @@ def _judge_prompt(mode: str) -> str:
 def judge_node(state: State) -> State:
     """[판단] 규제 조항과 룰 탐지 결과를 근거로 LLM 이 위반 여부 판단"""
     chunks = state.get("retrieved", [])
+    def _hit_line(h: RuleHit) -> str:
+        line = f"- ({h.severity}) {h.category}: '{h.term}' — {h.message}"
+        basis = CATEGORY_BASIS.get(h.category)
+        if basis:
+            line += f"\n  ▶ 확정 근거조항: {basis}"
+        return line
+
     rule_summary = "\n".join(
-        f"- ({h.severity}) {h.category}: '{h.term}' — {h.message}"
-        for h in state.get("rule_hits", [])
+        _hit_line(h) for h in state.get("rule_hits", [])
     ) or "(룰 탐지 없음)"
 
     mode = state.get("review_mode") or "표준"

@@ -1,0 +1,5 @@
+services:
+  api:
+    image: 103942587236.dkr.ecr.ap-southeast-2.amazonaws.com/lawbee-api:latest
+  ui:
+    image: 103942587236.dkr.ecr.ap-southeast-2.amazonaws.com/lawbee-ui:latest

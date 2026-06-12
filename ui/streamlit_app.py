@@ -9,6 +9,7 @@ API_BASE_URL 환경변수로 API 주소를 지정 (기본 http://127.0.0.1:8000)
 import html
 import json
 import os
+import re
 import sys
 
 import requests
@@ -174,6 +175,28 @@ def highlight(content, rule_hits):
                 f'border-bottom:2px solid {c["dot"]};padding:0 2px;border-radius:3px;">{term}</mark>')
         out = out.replace(term, mark, 1)
     return out.replace("\n", "<br>")
+
+
+def rule_chips(rule):
+    """근거 규정 문자열(;구분)을 조항 단위 칩 HTML로 — 법령명 강조, 괄호 설명은 ·로 풀어 표시"""
+    chips = []
+    for part in rule.split(";"):
+        part = part.strip()
+        if not part:
+            continue
+        m = re.match(r"^(.*?)\s*\(([^()]+)\)$", part)  # 말미 괄호 설명 → · 구분
+        if m:
+            part = f"{m.group(1)} · {m.group(2)}"
+        part = re.sub(r"\s+[—–]\s+", " · ", part)
+        m = re.match(r"^(.+?)\s+(제\d.*)$", part) or re.match(r"^(.+?) (· .+)$", part)
+        if m:
+            body = (f'<span style="color:#64748b;font-weight:700;">{html.escape(m.group(1))}</span> '
+                    f'{html.escape(m.group(2))}')
+        else:
+            body = html.escape(part)
+        chips.append(f'<span style="display:inline-block;font-size:11.5px;color:#3b4a63;background:#f1f4f9;'
+                     f'border:1px solid #e2e8f0;border-radius:6px;padding:3px 9px;line-height:1.5;">{body}</span>')
+    return "".join(chips)
 
 
 # --- HTML 조각 ---
@@ -1388,12 +1411,12 @@ function makeFlagEl(s, i) {
   d.style.cssText = 'position:relative;padding:10px 14px;border-bottom:1px solid #eef2f7;cursor:pointer;background:' + bgColor + ';transition:background .15s;';
   var kindColor = s.kind === '화면' ? '#7c3aed' : '#64748b';
   var termBadges = s.terms.map(function(t){
-    return '<span style="color:#94a3b8;font-size:10.5px;font-weight:600;">' + escHtml(t) + '</span>';
-  }).join('<span style="color:#d1d5db;margin:0 2px;">·</span>');
+    return '<span style="color:#94a3b8;font-size:10px;font-weight:600;letter-spacing:-0.3px;">' + escHtml(t) + '</span>';
+  }).join('<span style="color:#d1d5db;margin:0 1px;">·</span>');
   d.innerHTML = '<div style="display:flex;align-items:center;gap:7px;margin-bottom:4px;">'
-    + '<span style="font-family:ui-monospace,monospace;font-size:11px;color:#64748b;font-weight:700;">' + mmss(s.start) + '</span>'
-    + '<span style="font-size:10.5px;font-weight:700;color:' + kindColor + ';">' + s.kind + '</span>'
-    + '<span style="margin-left:auto;">' + termBadges + '</span>'
+    + '<span style="font-family:ui-monospace,monospace;font-size:11px;color:#64748b;font-weight:700;flex-shrink:0;">' + mmss(s.start) + '</span>'
+    + '<span style="font-size:10.5px;font-weight:700;color:' + kindColor + ';flex-shrink:0;white-space:nowrap;">' + s.kind + '</span>'
+    + '<span style="margin-left:auto;text-align:right;">' + termBadges + '</span>'
     + '</div>'
     + '<div style="font-size:12.5px;color:#1e293b;font-weight:500;line-height:1.6;">' + highlightTerms(s.text, s.terms, markBg, markColor) + '</div>';
   d.onmouseenter = function(){ d.style.background = bgHover; };
@@ -1820,9 +1843,12 @@ def detail(rid):
                 f'<span style="font-size:13px;font-weight:750;color:#0f1b2d;">{html.escape(f["cat"])}</span>'
                 f'<span style="margin-left:auto;">{ts_html}</span></div>'
                 f'{phrases_html}'
-                f'<div style="font-size:12.8px;color:#3a4a63;line-height:1.6;margin-top:6px;"><b style="color:#8593a8;font-size:13.6px;">문제점</b> · {html.escape(f["issue"])}</div>'
-                f'<div style="font-size:12.5px;color:#3a4a63;margin-top:5px;"><b style="color:#8593a8;font-size:13.6px;">근거 규정</b> · '
-                f'<span style="font-family:ui-monospace,monospace;">{html.escape(f["rule"])}</span></div></div>',
+                f'<div style="display:flex;gap:10px;margin-top:8px;">'
+                f'<span style="flex-shrink:0;width:52px;font-size:11px;font-weight:700;color:#8593a8;padding-top:2px;">문제점</span>'
+                f'<div style="font-size:12.8px;color:#3a4a63;line-height:1.65;">{html.escape(f["issue"])}</div></div>'
+                f'<div style="display:flex;gap:10px;margin-top:9px;padding-top:9px;border-top:1px dashed #e8ecf3;">'
+                f'<span style="flex-shrink:0;width:52px;font-size:11px;font-weight:700;color:#8593a8;padding-top:3px;">근거 규정</span>'
+                f'<div style="display:flex;flex-wrap:wrap;gap:5px;align-items:flex-start;">{rule_chips(f["rule"])}</div></div></div>',
                 unsafe_allow_html=True)
 
         # AI 수정 제안 — 내부 레이블([음성 자막], [화면 분석], N초:) 제거 후 표시

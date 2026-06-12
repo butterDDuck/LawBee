@@ -242,23 +242,30 @@ def _norm_type(s: str) -> str:
 
 
 def _fix_citations(judgment: Judgment, rule_hits: list[RuleHit], chunks: list[dict]) -> None:
-    """판정 후 인용 보정 — 룰 카테고리 위반은 확정 청크로 고정, 없는 id 는 제거"""
+    """판정 후 인용 보정 — 룰 카테고리 위반은 확정 청크로 고정, 없는 id 는 제거
+    룰 히트 카테고리는 유사 유형명도 보정하고, LLM 단독 판단 위반은
+    유형명이 카테고리와 정확히 일치할 때만 검색 풀 내 확정 청크로 보정
+    """
     available = {c["id"] for c in chunks}
-    categories = []
+    hit_cats = []
     for h in rule_hits:
-        if h.category in CATEGORY_CHUNKS and h.category not in categories:
-            categories.append(h.category)
+        if h.category in CATEGORY_CHUNKS and h.category not in hit_cats:
+            hit_cats.append(h.category)
+    candidates = hit_cats + [c for c in CATEGORY_CHUNKS if c not in hit_cats]
 
     for v in judgment.violations:
         # 검색 결과에 없는 id 인용(hallucination) 제거
         v.citation_ids = [cid for cid in v.citation_ids if cid in available]
         ntype = _norm_type(v.type)
-        for cat in categories:
+        for cat in candidates:
             ncat = _norm_type(cat)
-            if ncat in ntype or ntype in ncat:
-                fixed = CATEGORY_CHUNKS[cat]
-                # 확정 청크를 선두로, LLM 이 추가 인용한 유효 id 는 뒤에 유지
-                v.citation_ids = fixed + [cid for cid in v.citation_ids if cid not in fixed]
+            is_hit = cat in hit_cats
+            matched = (ncat in ntype or ntype in ncat) if is_hit else ncat == ntype
+            if matched:
+                fixed = [cid for cid in CATEGORY_CHUNKS[cat] if cid in available]
+                if fixed:
+                    # 확정 청크를 선두로, LLM 이 추가 인용한 유효 id 는 뒤에 유지
+                    v.citation_ids = fixed + [cid for cid in v.citation_ids if cid not in fixed]
                 break
 
 

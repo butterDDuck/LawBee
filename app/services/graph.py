@@ -21,14 +21,15 @@ from langgraph.graph import StateGraph, END
 
 from app.config import settings
 from app.rules import apply_rules
-from app.rules.lexicon import CATEGORY_BASIS
-from app.rag.retriever import search
+from app.rules.lexicon import CATEGORY_BASIS, CATEGORY_CHUNKS
+from app.rag.retriever import get_by_ids, search
 from app.domain.schema import (
     Citation,
     Judgment,
     ReviewMode,
     ReviewResult,
     RuleHit,
+    Violation,
 )
 
 _MAX_ALT_RETRIES = 3  # 대안 문구 재생성 최대 횟수
@@ -127,7 +128,8 @@ def retrieve_node(state: State) -> State:
     룰 탐지 유형마다 별도 검색해 각 위반의 정답 조항을 top 으로 확보"""
     rule_hits = state.get("rule_hits", [])
     media = state.get("media")
-    chunks: list[dict] = []
+    # 룰 카테고리의 확정 청크를 검색 결과보다 앞서 강제 포함 — 검색 누락에 의한 오인용 차단
+    chunks: list[dict] = _forced_chunks(rule_hits)
     seen_cats: set = set()
     for h in rule_hits:
         if h.category in seen_cats or len(seen_cats) >= 6:
@@ -138,6 +140,16 @@ def retrieve_node(state: State) -> State:
     # 콘텐츠 전반 검색 — 룰이 못 잡은 시각·해석형 위반 대비
     chunks += search(state["content"], k=6, media=media)
     return {"retrieved": _dedup_by_id(chunks), "needs_reretrieval": False}
+
+
+def _forced_chunks(rule_hits: list[RuleHit]) -> list[dict]:
+    """룰 히트 카테고리에 매핑된 확정 KB 청크 조회"""
+    ids: list[str] = []
+    for h in rule_hits:
+        for cid in CATEGORY_CHUNKS.get(h.category, []):
+            if cid not in ids:
+                ids.append(cid)
+    return get_by_ids(ids)
 
 
 def _format_context(chunks: list[dict]) -> str:
@@ -200,6 +212,12 @@ def judge_node(state: State) -> State:
         basis = CATEGORY_BASIS.get(h.category)
         if basis:
             line += f"\n  ▶ 확정 근거조항: {basis}"
+        chunk_ids = CATEGORY_CHUNKS.get(h.category)
+        if chunk_ids:
+            line += (
+                f"\n  ▶ 인용 지정: 이 항목을 위반으로 판정하면 type 은 '{h.category}', "
+                f"citation_ids 는 {chunk_ids} 를 사용"
+            )
         return line
 
     rule_summary = "\n".join(
@@ -215,7 +233,40 @@ def judge_node(state: State) -> State:
     judgment = _judge_llm().with_structured_output(Judgment).invoke(
         [("system", _judge_prompt(mode)), ("human", human)]
     )
+    _fix_citations(judgment, state.get("rule_hits", []), chunks)
     return {"judgment": judgment}
+
+
+def _norm_type(s: str) -> str:
+    return _re.sub(r"[\s·]", "", s)
+
+
+def _fix_citations(judgment: Judgment, rule_hits: list[RuleHit], chunks: list[dict]) -> None:
+    """판정 후 인용 보정 — 룰 카테고리 위반은 확정 청크로 고정, 없는 id 는 제거
+    룰 히트 카테고리는 유사 유형명도 보정하고, LLM 단독 판단 위반은
+    유형명이 카테고리와 정확히 일치할 때만 검색 풀 내 확정 청크로 보정
+    """
+    available = {c["id"] for c in chunks}
+    hit_cats = []
+    for h in rule_hits:
+        if h.category in CATEGORY_CHUNKS and h.category not in hit_cats:
+            hit_cats.append(h.category)
+    candidates = hit_cats + [c for c in CATEGORY_CHUNKS if c not in hit_cats]
+
+    for v in judgment.violations:
+        # 검색 결과에 없는 id 인용(hallucination) 제거
+        v.citation_ids = [cid for cid in v.citation_ids if cid in available]
+        ntype = _norm_type(v.type)
+        for cat in candidates:
+            ncat = _norm_type(cat)
+            is_hit = cat in hit_cats
+            matched = (ncat in ntype or ntype in ncat) if is_hit else ncat == ntype
+            if matched:
+                fixed = [cid for cid in CATEGORY_CHUNKS[cat] if cid in available]
+                if fixed:
+                    # 확정 청크를 선두로, LLM 이 추가 인용한 유효 id 는 뒤에 유지
+                    v.citation_ids = fixed + [cid for cid in v.citation_ids if cid not in fixed]
+                break
 
 
 def reflect_node(state: State) -> State:
@@ -237,7 +288,7 @@ def reretrieval_node(state: State) -> State:
     """[개선] 위반 유형 키워드로 규제 조항을 보강 검색"""
     judgment = state["judgment"]
     media = state.get("media")
-    chunks: list[dict] = []
+    chunks: list[dict] = _forced_chunks(state.get("rule_hits", []))
     seen: set = set()
     for v in judgment.violations:
         if v.type in seen or len(seen) >= 6:
@@ -269,8 +320,11 @@ def alternative_node(state: State) -> State:
         "원문의 마케팅 의도는 살리되, 지적된 위반 사유를 모두 해소한 대안 문구를 한국어로 작성하세요. "
         "과장·단정·보편적용 표현을 제거하고 필요한 고지를 반영하세요. 대안 문구만 출력하세요.\n\n"
         "【필수 준수 실무 기준】\n"
+        "⓪ (최우선) 원문에 없는 수치·조건·사실(금리 분해, 우대조건 종류, 신용점수 기준 등)을 절대 새로 만들지 마세요. "
+        "원문만으로 알 수 없는 필수 정보는 '○.○%', '○○ 조건' 같은 자리표시자로 표기해 실무자가 확정값을 채우게 하세요. "
+        "예금자보호 한도(5천만원) 등 법령상 확정된 수치만 예외로 표기할 수 있습니다.\n"
         "① 수익률·이자율 표시 시 세전(稅前) 또는 세후(稅後) 구분을 명시하세요 (감독규정 제19조).\n"
-        "② 우대금리·이벤트금리 등 조건부 혜택은 반드시 달성 조건을 병기하세요 (예: '급여이체 시 우대금리 포함').\n"
+        "② 우대금리·이벤트금리 등 조건부 혜택은 반드시 달성 조건을 병기하세요 (예: '우대금리는 ○○ 조건 충족 시 적용').\n"
         "③ '누구나', '무조건', '반드시' 등 단정·보편 표현 대신 조건·가능성을 명확히 서술하세요.\n"
         "④ '업계 1위', '최고', '최저' 등 최상급 표현은 삭제하거나 객관적 근거와 함께 표기하세요.\n"
         "⑤ 적금·예금은 투자성 상품이 아니므로 '수익률 목표', '기대수익' 등 투자성 오인 표현을 사용하지 마세요.\n"
@@ -282,12 +336,12 @@ def alternative_node(state: State) -> State:
         "(표시광고법 제3조, 금소법 제21조 제3호).\n\n"
         "【대안 문구 예시】\n"
         "원문: '누구나 연 5.0% 우대금리 적용'\n"
-        "→ '연 5.0%(세전, 우대금리 포함 / 기본금리 연 3.5% + 우대금리 연 1.5%, "
-        "우대금리는 급여이체 등록 시 적용)이며, 실제 적용 금리는 가입 조건에 따라 달라질 수 있습니다.'\n\n"
+        "→ '연 최고 5.0%(세전, 우대금리 포함 / 기본금리 연 ○.○% + 우대금리 연 ○.○%, "
+        "우대금리는 ○○ 조건 충족 시 적용)이며, 실제 적용 금리는 가입 조건에 따라 달라질 수 있습니다.'\n\n"
         "원문: '확정 수익 연 8% 적금'\n"
         "→ '연 최고 8%(세전) / 우대금리 조건 충족 시 적용되며, 중도 해지 시 금리가 달라질 수 있습니다.'\n\n"
         "원문: '타사 대비 수수료 50% 저렴, 업계 평균보다 낮은 금리'\n"
-        "→ '타행 이체 수수료 면제 혜택을 제공합니다(면제 조건: 월 1회 이상 급여이체). "
+        "→ '타행 이체 수수료 면제 혜택을 제공합니다(면제 조건: ○○ 충족 시). "
         "적용 금리는 가입 기간·조건에 따라 달라질 수 있습니다.' (객관적 출처 없는 비교·우위 표현은 제외)"
         + feedback_section
     )
@@ -306,8 +360,39 @@ def alternative_node(state: State) -> State:
     }
 
 
+# 금리·평점·금액 등 상품 사실 단위가 붙은 수치만 비교 (횟수·기간 등 일반 수사는 제외)
+_NUM_RE = _re.compile(r"\d+(?:\.\d+)?(?=\s*(?:%|％|점|원|만\s*원|천\s*만))")
+# 법령상 확정 수치·표준 번호는 창작으로 보지 않음 (예금자보호 한도, 수신거부 080 번호)
+_LEGAL_NUM_RE = _re.compile(r"5\s*천\s*만\s*원|080[-○\d]*")
+
+
+def _invented_numbers(original: str, alternative: str) -> list[str]:
+    """대안 문구에만 존재하는 수치 추출 — 상품 사실 hallucination 탐지"""
+    allowed = {float(n) for n in _NUM_RE.findall(original)}
+    cleaned = _LEGAL_NUM_RE.sub("", alternative)
+    return sorted({n for n in _NUM_RE.findall(cleaned) if float(n) not in allowed})
+
+
 def re_judge_node(state: State) -> State:
-    """[검증] 대안 문구가 규정을 통과하는지 재심의"""
+    """[검증] 대안 문구가 규정을 통과하는지 재심의
+    원문에 없는 수치가 창작됐으면 LLM 호출 없이 즉시 실패 처리해 재생성 루프로 회송
+    """
+    invented = _invented_numbers(state["content"], state["alternative"] or "")
+    if invented:
+        nums = ", ".join(invented)
+        return {"alt_judgment": Judgment(
+            status="위반",
+            summary=f"대안 문구에 원문에 없는 수치가 포함됨: {nums}",
+            violations=[Violation(
+                type="원문에 없는 수치 창작",
+                reason=(
+                    f"원문에 없는 수치({nums})는 실제 상품 조건과 다를 수 있음 — "
+                    "해당 수치를 삭제하거나 '○.○%', '○○ 조건' 자리표시자로 대체할 것"
+                ),
+                citation_ids=[],
+            )],
+        )}
+
     chunks = state.get("retrieved", [])
     mode = state.get("review_mode") or "표준"
     human = (

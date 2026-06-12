@@ -139,20 +139,28 @@ def search(
         doc_media = doc.metadata.get("media", "")
         if media and media not in doc_media and "공통" not in doc_media:
             continue
-        results.append(
-            {
-                "id": doc.metadata.get("id"),
-                "category": doc.metadata.get("category"),
-                "law": doc.metadata.get("law"),
-                "article": doc.metadata.get("article"),
-                "media": doc_media,
-                "content": doc.page_content,
-                "compliance_check": doc.metadata.get("compliance_check"),
-                "source_url": doc.metadata.get("source_url"),
-                "score": 0.0,
-            }
-        )
+        results.append(_doc_to_dict(doc))
         if len(results) >= k:
             break
 
     return results
+
+
+def _doc_to_dict(doc) -> dict:
+    return {
+        "id": doc.metadata.get("id"),
+        "category": doc.metadata.get("category"),
+        "law": doc.metadata.get("law"),
+        "article": doc.metadata.get("article"),
+        "media": doc.metadata.get("media", ""),
+        "content": doc.page_content,
+        "compliance_check": doc.metadata.get("compliance_check"),
+        "source_url": doc.metadata.get("source_url"),
+        "score": 0.0,
+    }
+
+
+def get_by_ids(ids: list[str]) -> list[dict]:
+    """KB 청크 id 직접 조회 — 룰 카테고리 확정 청크를 검색 결과에 강제 포함할 때 사용"""
+    index = {d.metadata.get("id"): d for d in _load_docs()}
+    return [_doc_to_dict(index[i]) for i in ids if i in index]

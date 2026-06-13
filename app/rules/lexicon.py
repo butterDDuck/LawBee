@@ -136,7 +136,7 @@ CATEGORY_BASIS: dict[str, str] = {
 }
 
 # 카테고리별 인용 청크 id — judge 가 citation_ids 에 사용할 KB 청크를 결정론적으로 고정
-# CATEGORY_BASIS 의 조항 텍스트와 짝을 이루며, KB(regulations.jsonl)에 실재하는 id 만 등록
+# CATEGORY_BASIS 의 조항 텍스트와 짝을 이루며, KB(regulations_merged.jsonl)에 실재하는 id 만 등록
 CATEGORY_CHUNKS: dict[str, list[str]] = {
     "원금·손실 단정":       ["FCPA-21-단정"],
     "원금 안전 단정":       ["FCPA-21-단정"],

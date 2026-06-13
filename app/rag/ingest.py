@@ -1,6 +1,6 @@
 """규제 데이터 적재 파이프라인
 
-data/regulations.jsonl (요약 청크) + doc/*.doc (법령 원문)
+data/regulations_merged.jsonl (요약 청크, settings.data_path) + doc/*.doc (법령 원문)
   →  OpenAI 임베딩  →  FAISS 벡터스토어 저장
 
 실행:

@@ -193,26 +193,28 @@ def _judge_prompt(mode: str) -> str:
     )
 
 
+def _hit_line(h: RuleHit) -> str:
+    line = f"- ({h.severity}) {h.category}: '{h.term}' — {h.message}"
+    basis = CATEGORY_BASIS.get(h.category)
+    if basis:
+        line += f"\n  ▶ 확정 근거조항: {basis}"
+    chunk_ids = CATEGORY_CHUNKS.get(h.category)
+    if chunk_ids:
+        line += (
+            f"\n  ▶ 인용 지정: 이 항목을 위반으로 판정하면 type 은 '{h.category}', "
+            f"citation_ids 는 {chunk_ids} 를 사용"
+        )
+    return line
+
+
+def _rule_summary(rule_hits: list[RuleHit]) -> str:
+    return "\n".join(_hit_line(h) for h in rule_hits) or "(룰 탐지 없음)"
+
+
 def judge_node(state: State) -> State:
     """[판단] 규제 조항과 룰 탐지 결과를 근거로 LLM 이 위반 여부 판단"""
     chunks = state.get("retrieved", [])
-    def _hit_line(h: RuleHit) -> str:
-        line = f"- ({h.severity}) {h.category}: '{h.term}' — {h.message}"
-        basis = CATEGORY_BASIS.get(h.category)
-        if basis:
-            line += f"\n  ▶ 확정 근거조항: {basis}"
-        chunk_ids = CATEGORY_CHUNKS.get(h.category)
-        if chunk_ids:
-            line += (
-                f"\n  ▶ 인용 지정: 이 항목을 위반으로 판정하면 type 은 '{h.category}', "
-                f"citation_ids 는 {chunk_ids} 를 사용"
-            )
-        return line
-
-    rule_summary = "\n".join(
-        _hit_line(h) for h in state.get("rule_hits", [])
-    ) or "(룰 탐지 없음)"
-
+    rule_summary = _rule_summary(state.get("rule_hits", []))
     mode = state.get("review_mode") or "표준"
     human = (
         f"[심의 대상 콘텐츠]\n{state['content']}\n\n"
@@ -315,10 +317,15 @@ def alternative_node(state: State) -> State:
         "① 수익률·이자율 표시 시 세전(稅前) 또는 세후(稅後) 구분을 명시하세요.\n"
         "② 우대금리·이벤트금리 등 조건부 혜택은 반드시 달성 조건을 병기하세요 (예: '우대금리는 ○○ 조건 충족 시 적용').\n"
         "③ 지적된 위반 표현(단정·보편적용·최상급·희소성·과장 등)은 각 위반 사유에 따라 삭제하거나 조건·가능성을 명확히 서술하세요.\n"
-        "④ 비교·우위 표현(타사 대비, 업계 평균보다 등)은 비교대상·기준·출처(조사기관·기준일)를 밝힐 수 있을 때만 쓰고, 없으면 삭제하세요.\n"
+        "④ 비교·우위 표현(타사 대비, 업계 평균보다, 더 낮은·저렴한 등)은 객관적 출처·기준·기준일을 제시할 수 있을 때만 쓰고, "
+        "그렇지 않으면 그 비교 문장 자체를 완전히 삭제하세요. '비교 기준은 명시되어 있지 않습니다', '근거는 별도로 없습니다'처럼 "
+        "근거 부재를 인정·고지하면서 비교 표현을 남겨두는 것은 절대 금지이며, 그 자체가 부당비교광고에 해당합니다.\n"
         "⑤ 적금·예금은 투자성 상품이 아니므로 '수익률 목표', '기대수익' 등 투자성 오인 표현을 사용하지 마세요.\n"
         "⑥ 유리한 조건(금리·혜택)을 부각할 때는 상응하는 불리한 조건(달성 조건·제한·중도해지 불이익 등)을 "
-        "동등한 비중으로 병기하세요. 유리한 조건만 강조하고 불리한 조건을 축소·누락하면 부당광고입니다.\n\n"
+        "동등한 비중으로 병기하세요. 유리한 조건만 강조하고 불리한 조건을 축소·누락하면 부당광고입니다.\n"
+        "⑦ 대출성 상품은 대출이자율과 함께 연체이자율을 반드시 병기하고(예: '연체이자율 연 ○.○%'), "
+        "이자율은 최저~최고 범위와 산출기준을 함께 표기하세요. '당일 승인'·'누구나 승인' 등 심사 없이 "
+        "승인되는 듯한 표현은 쓰지 말고 '영업일 기준 당일 심사 가능'처럼 심사가 전제임을 명시하세요.\n\n"
         "【대안 문구 예시】\n"
         "원문: '누구나 연 5.0% 우대금리 적용'\n"
         "→ '연 최고 5.0%(세전, 우대금리 포함 / 기본금리 연 ○.○% + 우대금리 연 ○.○%, "
@@ -379,14 +386,18 @@ def re_judge_node(state: State) -> State:
         )}
 
     chunks = state.get("retrieved", [])
+    # 대안 문구에도 룰 엔진을 재적용 — 새로 끼어든 부당비교·필수고지 누락 등을 잡아 재생성 루프로 회송
+    alt_hits = apply_rules(state["alternative"] or "")
     mode = state.get("review_mode") or "표준"
     human = (
         f"[심의 대상 콘텐츠 — AI가 수정 제안한 대안 문구]\n{state['alternative']}\n\n"
+        f"[룰 엔진 탐지 결과]\n{_rule_summary(alt_hits)}\n\n"
         f"[관련 규제 조항]\n{_format_context(chunks)}"
     )
     alt_judgment = _judge_llm().with_structured_output(Judgment).invoke(
         [("system", _judge_prompt(mode)), ("human", human)]
     )
+    _fix_citations(alt_judgment, alt_hits, chunks)
     return {"alt_judgment": alt_judgment}
 
 

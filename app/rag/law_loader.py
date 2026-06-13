@@ -12,7 +12,7 @@ from pathlib import Path
 from langchain_core.documents import Document
 from striprtf.striprtf import rtf_to_text
 
-# 법령명 키워드 → 청크 id 접두 코드 (regulations.jsonl 의 코드 체계와 맞춤)
+# 법령명 키워드 → 청크 id 접두 코드 (KB jsonl 의 코드 체계와 맞춤)
 LAW_CODES = [
     ("표시·광고의 공정화", "FAD"),
     ("전자상거래", "ECA"),

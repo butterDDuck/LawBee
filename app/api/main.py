@@ -115,6 +115,48 @@ async def create_review_image(
     return rec
 
 
+def _merge_frame_runs(
+    frame_data: list[tuple[float, str, list]],
+    frame_interval: float = 4.0,
+) -> list[tuple[float, float, str, list]]:
+    """연속된 동일 화면(동일 시각 위반 집합) 프레임을 하나의 구간으로 병합
+
+    같은 장면이 여러 프레임에 걸쳐 이어질 때 동일 시각 위반이 프레임마다 중복
+    출력되는 것을 방지. 위반이 있는 프레임은 위반 카테고리 집합을, 없는 프레임은
+    화면 텍스트를 병합 기준으로 삼음 (OCR 노이즈로 텍스트가 미세하게 달라도 같은
+    위반이면 한 구간으로 묶임).
+
+    Args:
+        frame_data: (시각(초), 화면 텍스트, finds) 목록 — 시각 오름차순 정렬 가정
+
+    Returns:
+        (start, end, 대표 텍스트, 대표 finds) 목록 — start==end 면 단일 프레임
+    """
+    def _key(txt: str, finds: list):
+        cats = frozenset(f.get("category") for f in finds if f.get("category"))
+        if cats:
+            return ("v", cats)                       # 위반 프레임: 카테고리 집합 기준
+        return ("t", " ".join(txt.split())[:24])     # 무위반 프레임: 화면 텍스트 기준
+
+    runs: list[dict] = []
+    for t, txt, finds in frame_data:
+        k = _key(txt, finds)
+        if runs and runs[-1]["key"] == k:
+            runs[-1]["frames"].append((t, txt, finds))
+            runs[-1]["end"] = t
+        else:
+            runs.append({"start": t, "end": t, "key": k, "frames": [(t, txt, finds)]})
+
+    out: list[tuple[float, float, str, list]] = []
+    for r in runs:
+        # 대표 텍스트는 구간 내 가장 정보가 많은(긴) 프레임 텍스트
+        best_txt = max((f[1] for f in r["frames"]), key=lambda s: len(s.strip()), default="")
+        # 대표 finds 는 위반이 있는 첫 프레임의 것 (카테고리 집합이 동일해 대표성 있음)
+        rep_finds = next((f[2] for f in r["frames"] if f[2]), [])
+        out.append((r["start"], r["end"], best_txt, rep_finds))
+    return out
+
+
 def _process_video(review_id: int, data: bytes, fname: str, review_mode: str = "표준") -> None:
     """백그라운드 영상 분석 — Whisper 포함 전 과정 처리 후 DB 갱신"""
     import time as _time
@@ -139,17 +181,21 @@ def _process_video(review_id: int, data: bytes, fname: str, review_mode: str = "
                         pass
             frame_data.sort()
 
-        # 고지띠 노출 시간 검사 — 필수 고지자막 3초 미만 탐지
+        # 연속 동일 화면을 구간으로 병합 — 같은 위반의 프레임별 중복 출력 방지
+        frame_runs = _merge_frame_runs(frame_data)
+
+        # 고지띠 노출 시간 검사 — 필수 고지자막 3초 미만 탐지 (병합 전 프레임 단위로 측정)
         frame_texts = [(t, txt) for t, txt, _ in frame_data]
         disclosure_violations = check_disclosure_duration(frame_texts)
 
         parts = []
         if transcript:
             parts.append("[음성 자막]\n" + transcript)
-        if frame_data:
+        if frame_runs:
             lines = []
-            for t, txt, finds in frame_data:
-                line = f"{int(t)}초: {txt}".strip()
+            for start, end, txt, finds in frame_runs:
+                label = f"{int(start)}초" if start == end else f"{int(start)}~{int(end)}초"
+                line = f"{label}: {txt}".strip()
                 for f in finds:
                     line += f" (시각 위반: {f.get('category')} - {f.get('detail', '')})"
                 lines.append(line)
@@ -185,12 +231,12 @@ def _process_video(review_id: int, data: bytes, fname: str, review_mode: str = "
         term_severity = {h.term: h.severity for h in result.rule_hits}
         audio_tl = [_seg(s.start, s.end, s.text, term_severity, "음성") for s in segments_raw]
         visual_tl = []
-        for t, txt, finds in frame_data:
+        for start, end, txt, finds in frame_runs:
             cats = [f.get("category") for f in finds if f.get("category")]
             one = " ".join(txt.split())
             disp = (one[:64] + "…") if len(one) > 64 else (one or "(화면)")
             sev = "high" if any(f.get("severity") == "high" for f in finds) else ("medium" if finds else "")
-            visual_tl.append(TimelineSegment(start=t, end=t + 4.0, text=disp,
+            visual_tl.append(TimelineSegment(start=start, end=end + 4.0, text=disp,
                                              flagged=bool(finds), terms=cats, kind="화면", severity=sev))
         result.timeline = sorted(audio_tl + visual_tl, key=lambda x: x.start)
 

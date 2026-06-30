@@ -57,6 +57,15 @@ class Judgment(BaseModel):
     violations: list[Violation] = Field(default_factory=list)
 
 
+class RelevanceGrade(BaseModel):
+    """CRAG 검색 결과 관련성 채점 (구조화 출력)"""
+
+    relevant_ids: list[str] = Field(
+        default_factory=list,
+        description="콘텐츠 심의의 근거가 될 만큼 관련 있는 조항 id 목록",
+    )
+
+
 class TimelineSegment(BaseModel):
     """영상 자막 구간 (위반 문구 타임스탬프 매핑)"""
 

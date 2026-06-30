@@ -1,12 +1,18 @@
 """LangGraph 기반 준법심의 파이프라인
 
 흐름:
-  룰 엔진 → 규제 조항 검색 → LLM 판단 → [reflect: 근거 충분성 검증]
+  룰 엔진 → 규제 조항 검색 → [CRAG: grade 관련성 채점]
+  → (근거 빈약) transform_query 재작성·재검색 → grade (최대 2회)
+  → (근거 충분) LLM 판단
   → (통과) END
   → (위반·주의) 대안 문구 생성 → [re_judge: 대안 재심의]
       → (통과) END
       → (실패, 최대 3회) 이전 피드백 포함 대안 재생성 → 루프
       → (3회 초과) auto_fix_failed 플래그로 END
+
+Corrective RAG(CRAG): 판단 전에 검색 결과의 관련성을 채점하고,
+근거가 빈약하면 질의를 재작성해 재검색하여 엉뚱한 조항 인용을 차단함.
+확정 청크(룰 카테고리 매핑)는 채점 대상에서 제외해 항상 보존함.
 
 에이전트 루프: 판단(judge) → 행동(alternative) → 검증(re_judge) → 개선(alternative 재시도)
 """
@@ -26,6 +32,7 @@ from app.rag.retriever import get_by_ids, search
 from app.domain.schema import (
     Citation,
     Judgment,
+    RelevanceGrade,
     ReviewMode,
     ReviewResult,
     RuleHit,
@@ -33,6 +40,17 @@ from app.domain.schema import (
 )
 
 _MAX_ALT_RETRIES = 3  # 대안 문구 재생성 최대 횟수
+_MIN_RELEVANT = 2     # judge 에 넘길 최소 관련 조항 수 (미달 시 질의 재작성)
+_MAX_REWRITE = 2      # CRAG 질의 재작성·재검색 최대 횟수
+
+# CRAG 활성 토글 — bench 에서 on/off 정확도 비교 시 끔
+_crag_enabled = True
+
+
+def set_crag_enabled(enabled: bool) -> None:
+    """CRAG 채점·재작성 루프 on/off (벤치마크 비교용)"""
+    global _crag_enabled
+    _crag_enabled = enabled
 
 
 _MODE_GUIDE: dict[str, str] = {
@@ -65,8 +83,14 @@ class State(TypedDict, total=False):
     rule_hits: list[RuleHit]
     retrieved: list[dict]
     judgment: Judgment
-    # reflect 노드가 판단 근거 불충분을 감지하면 True → retrieve 재실행
-    needs_reretrieval: bool
+    # CRAG grade 노드가 근거 빈약을 감지하면 True → transform_query 재작성·재검색
+    needs_rewrite: bool
+    # 질의 재작성 횟수 (무한 루프 방지)
+    rewrite_count: int
+    # 재작성 한도까지 가도 근거가 빈약하면 "low"
+    retrieval_confidence: str
+    # grade 가 노이즈로 걸러낸 검색 후보 수 (계측용)
+    graded_out: int
     alternative: str | None
     # 대안 재심의 결과
     alt_judgment: Judgment | None
@@ -139,7 +163,7 @@ def retrieve_node(state: State) -> State:
                          boost_terms=[h.category, h.term])
     # 콘텐츠 전반 검색 — 룰이 못 잡은 시각·해석형 위반 대비
     chunks += search(state["content"], k=6, media=media)
-    return {"retrieved": _dedup_by_id(chunks), "needs_reretrieval": False}
+    return {"retrieved": _dedup_by_id(chunks), "rewrite_count": 0}
 
 
 def _forced_chunks(rule_hits: list[RuleHit]) -> list[dict]:
@@ -260,34 +284,85 @@ def _fix_citations(judgment: Judgment, rule_hits: list[RuleHit], chunks: list[di
                 break
 
 
-def reflect_node(state: State) -> State:
-    """[검증] judge 판단의 근거 충분성을 자기 검증 — 조항 미인용 위반 항목이 있으면 재검색 요청"""
-    judgment = state["judgment"]
-    # 위반 항목 중 citation_ids 가 비어 있는 항목 수 계산
-    uncited = [v for v in judgment.violations if not v.citation_ids]
-    # 위반인데 인용 조항이 전혀 없으면 근거 불충분으로 판단해 재검색 요청
-    needs = (
-        judgment.status != "통과"
-        and len(uncited) > 0
-        and len(uncited) == len(judgment.violations)
-        and not state.get("needs_reretrieval")  # 무한 루프 방지: 재검색은 1회만
+def _grade(content: str, rule_hits: list[RuleHit], candidates: list[dict]) -> list[str]:
+    """[CRAG 채점] 검색 후보를 한 번의 LLM 호출로 배치 채점 — 관련 조항 id 만 반환"""
+    listing = "\n".join(
+        f"[{c['id']}] {c['law']} {c['article']} — {c['content'][:160]}"
+        for c in candidates
     )
-    return {"needs_reretrieval": needs}
+    system = (
+        "당신은 금융 콘텐츠 준법심의의 검색 결과를 평가하는 채점자입니다. "
+        "주어진 콘텐츠와 룰 탐지 결과를 심의할 때 근거 조항으로 쓸 만큼 직접 관련된 조항의 id 만 고르세요. "
+        "주제가 다르거나 막연히 관련된 조항은 제외하고, 관련된 것이 없으면 빈 목록을 반환하세요."
+    )
+    human = (
+        f"[심의 대상 콘텐츠]\n{content}\n\n"
+        f"[룰 엔진 탐지 결과]\n{_rule_summary(rule_hits)}\n\n"
+        f"[검색된 조항 후보]\n{listing}"
+    )
+    grade = _llm().with_structured_output(RelevanceGrade).invoke(
+        [("system", system), ("human", human)]
+    )
+    available = {c["id"] for c in candidates}
+    return [cid for cid in grade.relevant_ids if cid in available]
 
 
-def reretrieval_node(state: State) -> State:
-    """[개선] 위반 유형 키워드로 규제 조항을 보강 검색"""
-    judgment = state["judgment"]
+def grade_node(state: State) -> State:
+    """[CRAG 검증] 검색 결과의 관련성을 채점해 노이즈 조항을 걸러냄
+    확정 청크(룰 카테고리 매핑)는 채점 대상에서 제외해 항상 보존하고,
+    검색 유래 후보만 채점함. 관련 조항이 빈약하면 재작성을 요청함
+    """
+    chunks = state.get("retrieved", [])
+    if not _crag_enabled:
+        return {"needs_rewrite": False, "retrieval_confidence": "high"}
+
+    rule_hits = state.get("rule_hits", [])
+    forced_ids: set = set()
+    for h in rule_hits:
+        forced_ids.update(CATEGORY_CHUNKS.get(h.category, []))
+    forced = [c for c in chunks if c["id"] in forced_ids]
+    candidates = [c for c in chunks if c["id"] not in forced_ids]
+
+    if not candidates:
+        return {"needs_rewrite": False, "retrieval_confidence": "high"}
+
+    relevant_ids = set(_grade(state["content"], rule_hits, candidates))
+    relevant = [c for c in candidates if c["id"] in relevant_ids]
+    kept = forced + relevant
+    thin = len(kept) < _MIN_RELEVANT
+
+    # 안전장치: 그레이더가 전부 탈락시켜도 judge 가 굶지 않게 상위 후보를 남김
+    if not relevant:
+        kept = forced + candidates[:_MIN_RELEVANT]
+
+    rewrite_count = state.get("rewrite_count", 0)
+    needs_rewrite = thin and rewrite_count < _MAX_REWRITE
+    return {
+        "retrieved": kept,
+        "needs_rewrite": needs_rewrite,
+        "retrieval_confidence": "low" if thin and not needs_rewrite else "high",
+        "graded_out": state.get("graded_out", 0) + (len(candidates) - len(relevant)),
+    }
+
+
+def transform_query_node(state: State) -> State:
+    """[CRAG 개선] 근거가 빈약하면 질의를 법률 용어 중심으로 재작성해 보강 검색"""
+    content = state["content"]
+    rule_hits = state.get("rule_hits", [])
     media = state.get("media")
-    chunks: list[dict] = _forced_chunks(state.get("rule_hits", []))
-    seen: set = set()
-    for v in judgment.violations:
-        if v.type in seen or len(seen) >= 6:
-            continue
-        seen.add(v.type)
-        chunks += search(f"{v.type} {v.reason}", k=3, media=media, boost_terms=[v.type])
-    chunks += search(state["content"], k=4, media=media)
-    return {"retrieved": _dedup_by_id(chunks)}
+    system = (
+        "당신은 금융 준법 규정 검색을 돕는 질의 재작성기입니다. "
+        "주어진 마케팅 콘텐츠가 어떤 규제에 저촉될 수 있는지 분석해, "
+        "관련 법령·감독규정을 검색하기 좋은 핵심 법률 용어와 위반 유형 키워드를 한 줄로 출력하세요. "
+        "원문을 그대로 반복하지 말고 규제 검색에 쓰일 개념어 위주로 작성하세요."
+    )
+    human = f"[콘텐츠]\n{content}\n\n[룰 탐지]\n{_rule_summary(rule_hits)}"
+    rewritten = _llm().invoke([("system", system), ("human", human)]).content.strip()
+
+    # 재작성 질의로 보강 검색 후 기존(확정 청크 포함) 결과와 병합 → grade 재채점
+    extra = search(rewritten, k=8, media=media, boost_terms=[rewritten])
+    merged = _dedup_by_id(state.get("retrieved", []) + extra)
+    return {"retrieved": merged, "rewrite_count": state.get("rewrite_count", 0) + 1}
 
 
 def alternative_node(state: State) -> State:
@@ -403,10 +478,13 @@ def re_judge_node(state: State) -> State:
 
 # --- 라우팅 ---
 
-def _route_after_reflect(state: State) -> str:
-    """근거 불충분이면 보강 검색 후 재판단, 아니면 다음 단계로"""
-    if state.get("needs_reretrieval"):
-        return "reretrieval"
+def _route_after_grade(state: State) -> str:
+    """근거 빈약이면 질의 재작성·재검색, 충분하면 판단으로"""
+    return "transform_query" if state.get("needs_rewrite") else "judge"
+
+
+def _route_after_judge(state: State) -> str:
+    """통과면 종료, 위반·주의면 대안 문구 생성"""
     return "end" if state["judgment"].status == "통과" else "alternative"
 
 
@@ -443,27 +521,32 @@ def give_up_node(state: State) -> State:
 def _compiled():
     g = StateGraph(State)
 
-    g.add_node("rule",         rule_node)
-    g.add_node("retrieve",     retrieve_node)
-    g.add_node("judge",        judge_node)
-    g.add_node("reflect",      reflect_node)
-    g.add_node("reretrieval",  reretrieval_node)
-    g.add_node("alternative",  alternative_node)
-    g.add_node("re_judge",     re_judge_node)
-    g.add_node("collect_fb",   _collect_feedback)
-    g.add_node("give_up",      give_up_node)
+    g.add_node("rule",            rule_node)
+    g.add_node("retrieve",        retrieve_node)
+    g.add_node("grade",           grade_node)
+    g.add_node("transform_query", transform_query_node)
+    g.add_node("judge",           judge_node)
+    g.add_node("alternative",     alternative_node)
+    g.add_node("re_judge",        re_judge_node)
+    g.add_node("collect_fb",      _collect_feedback)
+    g.add_node("give_up",         give_up_node)
 
     g.set_entry_point("rule")
-    g.add_edge("rule",        "retrieve")
-    g.add_edge("retrieve",    "judge")
-    g.add_edge("judge",       "reflect")
+    g.add_edge("rule",     "retrieve")
+    g.add_edge("retrieve", "grade")
 
-    # reflect: 근거 불충분 → 보강 검색 후 재판단 / 통과 → END / 위반 → 대안 생성
+    # CRAG: 근거 빈약 → 질의 재작성·재검색 후 재채점 / 충분 → 판단
     g.add_conditional_edges(
-        "reflect", _route_after_reflect,
-        {"reretrieval": "reretrieval", "end": END, "alternative": "alternative"},
+        "grade", _route_after_grade,
+        {"transform_query": "transform_query", "judge": "judge"},
     )
-    g.add_edge("reretrieval", "judge")  # 보강 검색 후 재판단
+    g.add_edge("transform_query", "grade")
+
+    # judge: 통과 → END / 위반·주의 → 대안 생성
+    g.add_conditional_edges(
+        "judge", _route_after_judge,
+        {"end": END, "alternative": "alternative"},
+    )
 
     # 대안 생성 후 재심의
     g.add_edge("alternative", "re_judge")
@@ -486,6 +569,7 @@ def run_review(content: str, media: str | None = None, review_mode: str = "표�
             "content": content,
             "media": media,
             "review_mode": review_mode,
+            "rewrite_count": 0,
             "alt_retries": 0,
             "alt_feedback": [],
             "auto_fix_failed": False,
